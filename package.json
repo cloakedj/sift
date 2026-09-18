@@ -1,0 +1,29 @@
+{
+  "name": "jev",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --env-file=.env src/index.ts",
+    "cli": "tsx --env-file-if-exists=.env src/cli/index.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.tests.json --noEmit",
+    "lint": "oxlint --deny-warnings src tests",
+    "lint:fix": "oxlint --fix --deny-warnings src tests",
+    "format": "oxfmt --write src tests package.json package-lock.json tsconfig.json tsconfig.tests.json .oxfmtrc.json .oxlintrc.json",
+    "format:check": "oxfmt --check src tests package.json package-lock.json tsconfig.json tsconfig.tests.json .oxfmtrc.json .oxlintrc.json"
+  },
+  "dependencies": {
+    "@typesafe-ai/sdk": "latest",
+    "effect": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "oxfmt": "^0.68.0",
+    "oxlint": "^1.83.0",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}

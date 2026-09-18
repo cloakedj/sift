@@ -1,0 +1,14 @@
+# Coding standards
+
+- Use Oxfmt for formatting and Oxlint for linting. Run `npm run format`, `npm run lint`, and `npm run format:check` before submitting changes. Keep semantic fixture contents unchanged unless intentionally updating fixtures; tooling excludes `tests/fixtures` and generated/local state.
+- Document every named function and implemented method (including constructors, accessors, private helpers, and named arrow functions) with a multiline JSDoc block: opening `/**`, description lines prefixed with ` *`, and closing ` */` on separate lines. Describe purpose and relevant behavior, side effects, failure conditions, or invariants rather than restating the name. Use `@param` and `@returns` when they clarify behavior; do not duplicate TypeScript types. Anonymous inline callbacks and type-only signatures do not require JSDoc. Apply this to application code and test helpers; semantic fixture source is exempt.
+
+- Organize related files in a directory named for their shared scope. Keep entry points thin.
+- Within each scope, put shared types in `types.ts`, constant values in `consts.ts`, and reusable functions in `utils.ts`. Avoid unrelated global dumping grounds.
+- Route all user-facing messages and structured output through `src/messages`. Do not call console methods elsewhere, including provider adapters and examples.
+- Messages have a relevance label (for example `Scenario` or `Onboarding`), a severity (`info`, `warning`, `error`, `debug`), and optional styling tags. Keep JSON stdout free of diagnostic prefixes; route diagnostics to stderr in JSON mode.
+- Keep credential-free tests distinct from real-service evidence. Never claim a semantic checkpoint passed using mocks alone.
+- Centralize error definitions and the shared error contract in `src/errors`: code, reason, message, metadata, and retryability. Use `Errors.fail` in Effect services and `Errors.raise` only in synchronous parsers/guards; never construct or throw ad hoc native errors. Normalize external failures at boundaries and serialize through the same pipeline. Do not persist raw provider bodies, credentials, or stacks.
+- Build on Effect throughout: typed failure channels, Context/Layer dependency injection, structured concurrency, cancellation, and scoped resource acquisition/release. Use promises only at external API boundaries and test/runtime entry points, not for application orchestration.
+- Prefer classes for services, stateful components, and meaningful behavior. Pure stateless utilities may remain functions. Use explicit `public`, `private`, and `protected` modifiers. Prefix every private/protected method and variable with `_`; do not use JavaScript `#` members.
+- Keep error reporting at presentation boundaries; lower layers return structured failures instead of independently logging/rethrowing them.

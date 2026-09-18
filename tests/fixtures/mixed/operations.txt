@@ -1,0 +1,4 @@
+Delivery failures
+
+Retry temporary failures with an increasing pause between attempts.
+Stop after the configured attempt limit and notify an operator.

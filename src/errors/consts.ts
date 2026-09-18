@@ -1,0 +1,17 @@
+export const ERROR_DEFINITIONS = {
+  INVALID_ARGUMENT: { message: "Invalid argument", retryable: false },
+  CONFIGURATION: { message: "Invalid configuration", retryable: false },
+  IO: { message: "Filesystem operation failed", retryable: false },
+  INVALID_DATA: { message: "Invalid stored data", retryable: false },
+  BINARY_RESOURCE: { message: "Resource is not supported text", retryable: false },
+  FRONT_MATTER: { message: "Unsupported front matter", retryable: false },
+  STORE_LOCKED: { message: "Onboarding is locked", retryable: false },
+  UNSAFE_PATH: { message: "Unsafe filesystem path", retryable: false },
+  NOT_FOUND: { message: "Required state was not found", retryable: false },
+  INCOMPLETE: { message: "Operation is incomplete", retryable: false },
+  PAYLOAD_LIMIT: { message: "Request exceeds application guardrail", retryable: false },
+  PROVIDER: { message: "Jev request failed", retryable: true },
+  PROVIDER_RESPONSE: { message: "Invalid Jev response", retryable: false },
+  INTERNAL: { message: "Unexpected application failure", retryable: false },
+  INTERRUPTED: { message: "Operation interrupted", retryable: false },
+} as const;
