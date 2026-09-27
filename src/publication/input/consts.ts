@@ -1,0 +1,6 @@
+export const TOKENIZER_REVISION = "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a";
+export const TOKENIZER_ID = `BAAI/bge-base-en-v1.5@${TOKENIZER_REVISION}:tokenizers-js-0.2.0`;
+export const MAX_INPUT_TOKENS = 512;
+export const TOKENIZER_SHA256 = "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66";
+export const TOKENIZER_CONFIG_SHA256 =
+  "9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3";

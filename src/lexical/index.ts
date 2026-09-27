@@ -34,6 +34,32 @@ export class LexicalService {
       return { files: inventory.resources.length, chunks: index.chunks.length, path };
     });
   }
+  public recover(query: string, root = ".", limit = MAX_HITS) {
+    return Effect.gen(this, function* () {
+      const terms = tokenize(query);
+      if (!terms.length)
+        return yield* Errors.fail("INVALID_ARGUMENT", "Search query cannot be empty");
+      const inventory = yield* this._inventory.discover(root);
+      if (!inventory.complete)
+        return yield* Errors.fail(
+          "INCOMPLETE",
+          "Discovery incomplete; lexical fallback unavailable",
+        );
+      const resources = new Map(inventory.resources.map((resource) => [resource.id, resource]));
+      return inventory.chunks
+        .map((chunk) => {
+          const indexed = { ...chunk, terms: tokenize(`${chunk.path}\n${chunk.text}`) };
+          return {
+            chunk: indexed,
+            resource: resources.get(chunk.resourceId)!,
+            score: scoreChunk(indexed, query, terms),
+          };
+        })
+        .filter((hit) => hit.score > 0)
+        .sort((a, b) => b.score - a.score || a.chunk.id.localeCompare(b.chunk.id))
+        .slice(0, limit);
+    });
+  }
   public search(query: string, root = ".") {
     return Effect.gen(this, function* () {
       const terms = tokenize(query);

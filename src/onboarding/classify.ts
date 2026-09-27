@@ -19,6 +19,10 @@ import { embeddingDocument, mediaFacts } from "./utils.js";
 
 export class ClassificationService {
   public constructor(private readonly _jev: JevService) {}
+  /**
+   * Reuse a fingerprint-matched classification or infer and persist a source-linked record.
+   * Rebuild deterministic projections even when classification answers are reused.
+   */
   public classify(
     chunk: InventoryChunk,
     resource: InventoryResource,

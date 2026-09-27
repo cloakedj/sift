@@ -8,7 +8,7 @@
     "cli": "tsx --env-file-if-exists=.env src/cli/index.ts",
     "test": "tsx --test tests/*.test.ts",
     "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && cp src/publication/input/assets/LICENSE src/publication/input/assets/README.md dist/publication/input/assets/",
     "typecheck": "tsc -p tsconfig.tests.json --noEmit",
     "lint": "oxlint --deny-warnings src tests",
     "lint:fix": "oxlint --fix --deny-warnings src tests",
@@ -16,6 +16,7 @@
     "format:check": "oxfmt --check src tests package.json package-lock.json tsconfig.json tsconfig.tests.json .oxfmtrc.json .oxlintrc.json"
   },
   "dependencies": {
+    "@huggingface/tokenizers": "0.2.0",
     "@typesafe-ai/sdk": "latest",
     "effect": "latest"
   },
@@ -24,6 +25,7 @@
     "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0",
     "tsx": "latest",
-    "typescript": "latest"
+    "typescript": "latest",
+    "wrangler": "4.134.0"
   }
 }

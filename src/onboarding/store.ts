@@ -15,6 +15,9 @@ export class StateStore implements LocalStore {
   public read<T>(path: string) {
     return this._fs.readJson<T>(join(this._directory, path));
   }
+  /**
+   * Publish JSON by atomic rename and remove temporary files even after failure.
+   */
   public write(path: string, value: unknown) {
     return Effect.scoped(
       Effect.gen(this, function* () {
@@ -65,6 +68,10 @@ export class StoreService {
       return join(info.isDirectory() ? path : dirname(path), ".jev");
     });
   }
+  /**
+   * Acquire a single-writer lock for the scope; failed acquisition must never
+   * release another run's lock. Reject symlinked state directories before writing.
+   */
   public open(root: string, runId: string) {
     return Effect.gen(this, function* () {
       const directory = yield* this.directory(root);

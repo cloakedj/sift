@@ -77,7 +77,7 @@ test("query intent validates cache, invalidates inputs, preserves negatives, and
     const query = "credentials without password";
     const first = await infer(root, query, client.model, provider);
     assert.equal(first.reused, false);
-    assert.equal(first.retrieval, "not-implemented");
+    assert.equal(first.retrieval, "not-requested");
     assert.ok(first.intent.negativeSignals.includes("password"));
     assert.ok(
       !first.intent.embeddingDocument

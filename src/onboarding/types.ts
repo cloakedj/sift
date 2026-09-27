@@ -96,6 +96,25 @@ export interface ClassificationDimensionSummary {
   secondary: number;
   labelsAssigned: string[];
 }
+export interface ProjectionSummary {
+  records: number;
+  uniqueDocuments: number;
+  collidingRecords: number;
+  collisionGroups: {
+    documentHash: string;
+    chunks: {
+      id: string;
+      uri: string;
+      range: SemanticChunkRecord["resource"]["range"];
+    }[];
+  }[];
+}
+export interface ProjectionRepairReport {
+  root: string;
+  repaired: number;
+  unchanged: number;
+  projectionVersion: string;
+}
 export interface ValidationReport {
   root: string;
   complete: boolean;
@@ -113,9 +132,15 @@ export interface ValidationReport {
     resourceKinds: Record<string, number>;
     dimensions: ClassificationDimensionSummary[];
   };
+  projections: ProjectionSummary;
   findings: QualityFinding[];
+}
+export interface StageTiming {
+  stage: string;
+  milliseconds: number;
 }
 export interface OnboardResult {
   manifest: RunManifest;
   taxonomy: TaxonomySnapshot;
+  timings: StageTiming[];
 }

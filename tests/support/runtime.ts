@@ -4,6 +4,7 @@ import { onboard as onboardEffect, OnboardingLive } from "../../src/onboarding/i
 import {
   inspectRecords as inspect,
   inspectValidation as validate,
+  repairProjections as repair,
 } from "../../src/onboarding/inspect.js";
 import type { OnboardOptions } from "../../src/onboarding/types.js";
 import { LocalRuntimeLive } from "../../src/runtime/index.js";
@@ -18,6 +19,8 @@ export const inspectRecords = (root: string) =>
   Effect.runPromise(inspect(root).pipe(Effect.provide(LocalRuntimeLive)));
 export const inspectValidation = (root: string) =>
   Effect.runPromise(validate(root).pipe(Effect.provide(LocalRuntimeLive)));
+export const repairProjections = (root: string) =>
+  Effect.runPromise(repair(root).pipe(Effect.provide(LocalRuntimeLive)));
 export const onboardingProgram = (root: string, client: JevClient, options: OnboardOptions = {}) =>
   onboardEffect(root, options).pipe(
     Effect.provide(OnboardingLive),

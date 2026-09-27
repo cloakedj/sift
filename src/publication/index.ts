@@ -54,8 +54,8 @@ export class PublicationService {
             "Nonempty, complete semantic records are required for publication",
           );
         records.sort((a, b) => a.id.localeCompare(b.id));
-        // BGE has a 512-token per-input limit. UTF-8 bytes conservatively bound
-        // text tokens; reserve room for special tokens rather than silently truncate.
+        // BGE documents a 512-token input limit. This byte guard is an interim
+        // policy, not verified tokenizer parity or proof against hosted truncation.
         for (const record of records) {
           if (
             !record.embeddingDocument ||

@@ -62,6 +62,10 @@ class FrontMatterParser {
     values.push(this._scalar(body.slice(start)));
     return values;
   }
+  /**
+   * Parse only bounded string and string-list front matter, preserving source offsets.
+   * Unsupported YAML fails explicitly so callers can warn and still harvest body text.
+   */
   public parse(text: string, maxBytes: number) {
     const lines = text.split(/(?<=\n)/);
     if (lines[0]?.trim() !== "---")
@@ -107,6 +111,11 @@ class FrontMatterParser {
   }
 }
 
+/**
+ * Collect source-linked candidates without treating them as approved labels.
+ * Apply per-source budgets and rare-label reservation while retaining overflow
+ * and exclusions for inspection; malformed front matter does not discard the resource.
+ */
 export function harvestCandidates(
   inventory: Inventory,
   config: HarvestConfig = HARVEST_CONFIG,

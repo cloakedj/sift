@@ -1,13 +1,41 @@
 import { Effect, Schedule } from "effect";
 import { Errors } from "../errors/index.js";
-import { GET_VECTOR_BATCH_SIZE, MAX_QUERY_TOP_K } from "./consts.js";
+import { EmbeddingInputService } from "./input/index.js";
+import {
+  EMBEDDING_BATCH_SIZE,
+  GET_VECTOR_BATCH_SIZE,
+  MAX_EMBEDDING_BYTES,
+  MAX_QUERY_TOP_K,
+} from "./consts.js";
 import type { CloudflareConfig, EmbeddingVector, RemoteVector, VectorMatch } from "./types.js";
 
 export class CloudflarePublicationClient {
-  public constructor(private readonly _config: CloudflareConfig) {}
+  public constructor(
+    private readonly _config: CloudflareConfig,
+    private readonly _inputs = new EmbeddingInputService(),
+  ) {}
 
   public embed(texts: string[]) {
     return Effect.gen(this, function* () {
+      if (!texts.length) return [] as number[][];
+      if (texts.length > EMBEDDING_BATCH_SIZE)
+        return yield* Errors.fail(
+          "PAYLOAD_LIMIT",
+          "Embedding batch exceeds the local 16-input limit",
+        );
+      for (const text of texts) {
+        if (typeof text !== "string" || !text.trim())
+          return yield* Errors.fail(
+            "INVALID_ARGUMENT",
+            "Embedding inputs must be nonempty strings",
+          );
+        if (Buffer.byteLength(text, "utf8") > MAX_EMBEDDING_BYTES)
+          return yield* Errors.fail(
+            "PAYLOAD_LIMIT",
+            "Embedding input exceeds the conservative 500-byte guardrail",
+          );
+      }
+      for (const text of texts) yield* this._inputs.validate(text, this._config.model);
       const body = yield* this._request(`/ai/run/${this._config.model}`, {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text: texts, pooling: "cls" }),

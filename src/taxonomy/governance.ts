@@ -38,6 +38,10 @@ class GovernanceRun {
       harvest.candidates.find((candidate) => candidate.id === id)!,
     );
   }
+  /**
+   * Reuse fingerprint-matched nonfailed judgments unless reconsideration is requested.
+   * Govern each dimension independently and persist the resulting registry snapshot.
+   */
   public run(rerun: boolean) {
     return Effect.gen(this, function* () {
       const previous = yield* this._store.read<TaxonomySnapshot>("taxonomy.json");
@@ -141,6 +145,10 @@ class GovernanceRun {
       ),
     };
   }
+  /**
+   * Split oversized batches before inference and preserve failed or uncertain outcomes.
+   * Append judgment receipts and save progress after each evaluated batch for resumption.
+   */
   private _evaluate(batch: Candidate[], dimension: Dimension): Effect.Effect<void, AppError> {
     return Effect.gen(this, function* () {
       if (!batch.length) return;

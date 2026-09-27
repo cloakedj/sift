@@ -27,6 +27,9 @@ export class Errors {
     throw Errors.create(code, reason, metadata);
   }
 
+  /**
+   * Preserve application errors and sanitize external failures at API boundaries.
+   */
   public static normalize(
     cause: unknown,
     code: ErrorCode = "INTERNAL",
@@ -66,6 +69,9 @@ export class Errors {
     };
   }
 
+  /**
+   * Convert Effect failures, defects, or interruption into a presentation-safe error.
+   */
   public static fromCause(cause: Cause.Cause<AppError>): AppError {
     const failure = Cause.failureOption(cause);
     if (Option.isSome(failure)) return failure.value;

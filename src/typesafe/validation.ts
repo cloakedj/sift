@@ -2,7 +2,7 @@ import { Errors } from "../errors/index.js";
 import type { Questions, SystemOneResult } from "@typesafe-ai/sdk";
 
 export function validateResult(
-  result: SystemOneResult<Questions>,
+  result: Pick<SystemOneResult<Questions>, "model" | "answers">,
   questions: Questions,
   model: string,
 ) {

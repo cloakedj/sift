@@ -28,8 +28,11 @@ export const identifierForms = (value: string) => [
   ]),
 ];
 
-// Round-robin resource selection within each priority tier, with global frequency
-// ranking inside each resource. Sorting uses code-point order, not locale/discovery order.
+/**
+ * Reserve capacity for rare explicit labels, then select round-robin across resources
+ * within each source-priority tier. Rank by global frequency within each resource;
+ * code-point ordering keeps results independent of locale and discovery order.
+ */
 export function selectCandidates(candidates: Candidate[], config: HarvestConfig) {
   const frequency = (candidate: Candidate) =>
     new Set(candidate.evidence.map((e) => e.resourceId)).size;

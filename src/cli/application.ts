@@ -1,12 +1,26 @@
 import { parseArgs } from "node:util";
 import { Effect } from "effect";
+import {
+  evaluateRelevanceFile,
+  generateScaleCorpus,
+  summarizeBenchmarkReportFiles,
+} from "../benchmark/index.js";
+import type { ScaleCorpusKind } from "../benchmark/types.js";
+import { runRelevanceSuite } from "../benchmark/relevance-run/index.js";
 import { Errors } from "../errors/index.js";
 import { discoverInventory } from "../inventory/index.js";
 import { inferQuery, IntentLive } from "../intent/index.js";
 import { Lexical } from "../lexical/index.js";
 import { Messages, type MessageService } from "../messages/index.js";
 import { onboard, OnboardingLive } from "../onboarding/index.js";
-import { inspectRecords, inspectTaxonomy, inspectValidation } from "../onboarding/inspect.js";
+import {
+  inspectRecords,
+  inspectTaxonomy,
+  inspectValidation,
+  repairProjections,
+} from "../onboarding/inspect.js";
+import { publicationStatus, publishVectors, PublicationLive } from "../publication/index.js";
+import { searchSemantic, RetrievalLive } from "../retrieval/index.js";
 import { TaxonomyLive } from "../taxonomy/governance.js";
 import { JevLive } from "../typesafe/client.js";
 import { COMMON_OPTIONS, USAGE } from "./consts.js";
@@ -19,6 +33,13 @@ export class CliApplication {
       if (command === "onboard") return yield* this._onboard(args);
       if (command === "inspect") return yield* this._inspect(args);
       if (command === "search") return yield* this._search(args);
+      if (command === "repair-projections") return yield* this._repairProjections(args);
+      if (command === "publish") return yield* this._publish(args);
+      if (command === "status") return yield* this._status(args);
+      if (command === "generate-scale-corpus") return yield* this._generateScaleCorpus(args);
+      if (command === "benchmark-summary") return yield* this._benchmarkSummary(args);
+      if (command === "evaluate-relevance") return yield* this._evaluateRelevance(args);
+      if (command === "benchmark-relevance") return yield* this._benchmarkRelevance(args);
       if (command === "index" || command === "lexical-search")
         return yield* this._lexical(command === "index" ? "index" : "search", args);
       if (command && command !== "help" && command !== "--help")
@@ -27,6 +48,9 @@ export class CliApplication {
       return 0;
     });
   }
+  /**
+   * Parse onboarding options and run discovery or paid semantic classification.
+   */
   private _onboard(args: string[]) {
     return Effect.gen(this, function* () {
       const { values, positionals } = yield* Errors.attempt(
@@ -113,6 +137,12 @@ export class CliApplication {
           text: `${result.manifest.state}: ${result.manifest.classified} classified, ${result.manifest.reused} reused, ${result.manifest.failures.length} failures, ${result.manifest.deferred.length} deferred`,
           tags: ["summary"],
         });
+        yield* this._output.report({
+          label: "Onboarding",
+          level: "info",
+          text: `Timings: ${result.timings.map((timing) => `${timing.stage}=${timing.milliseconds.toFixed(1)}ms`).join(", ")}`,
+          tags: ["timing"],
+        });
         for (const failure of result.manifest.failures)
           yield* this._output.error(
             "Jev",
@@ -167,25 +197,289 @@ export class CliApplication {
           parseArgs({
             args,
             allowPositionals: true,
-            options: { ...COMMON_OPTIONS, "show-intent": { type: "boolean" } },
+            options: {
+              ...COMMON_OPTIONS,
+              "show-intent": { type: "boolean" },
+              explain: { type: "boolean" },
+              rerank: { type: "boolean" },
+              "lexical-fallback": { type: "boolean" },
+              "top-k": { type: "string" },
+            },
           }),
         "INVALID_ARGUMENT",
       );
-      if (!values["show-intent"])
+      if (
+        values["show-intent"] &&
+        (values.explain || values["top-k"] || values.rerank || values["lexical-fallback"])
+      )
         return yield* Errors.fail(
           "INVALID_ARGUMENT",
-          "Semantic retrieval is not implemented yet; use search --show-intent for query intent or lexical-search for explicit diagnostics.",
+          "--explain, --top-k, --rerank and --lexical-fallback require retrieval, not --show-intent",
         );
-      const result = yield* inferQuery(values.root ?? ".", positionals.join(" ")).pipe(
-        Effect.provide(IntentLive),
+      const topK =
+        values["top-k"] === undefined
+          ? undefined
+          : yield* Errors.attempt(() => positiveInteger(values["top-k"], 8), "INVALID_ARGUMENT");
+      const result = yield* values["show-intent"]
+        ? inferQuery(values.root ?? ".", positionals.join(" ")).pipe(Effect.provide(IntentLive))
+        : searchSemantic(values.root ?? ".", positionals.join(" "), {
+            explain: values.explain,
+            lexicalFallback: values["lexical-fallback"],
+            rerank: values.rerank,
+            topK,
+          }).pipe(
+            Effect.provide(RetrievalLive),
+            Effect.provide(IntentLive),
+            Effect.provide(PublicationLive),
+          );
+      if (values.json) yield* this._output.json(result);
+      else if ("results" in result && !values.explain) {
+        for (const match of result.results)
+          yield* this._output.report({
+            label: "Search",
+            level: "info",
+            text: `${match.rank}. [${match.source ?? "semantic"}] ${match.record.resource.uri}:${match.record.resource.range.startLine}-${match.record.resource.range.endLine}\n${match.record.resource.textPreview}`,
+          });
+        for (const finding of result.findings)
+          yield* this._output.report({
+            label: "Search",
+            level: finding.severity,
+            text: finding.message,
+          });
+      } else
+        yield* this._output.report({
+          label: values["show-intent"] ? "Query intent" : "Search",
+          level: "info",
+          text: JSON.stringify(result, null, 2),
+        });
+      return 0;
+    });
+  }
+  private _repairProjections(args: string[]) {
+    return Effect.gen(this, function* () {
+      const { values, positionals } = yield* Errors.attempt(
+        () => parseArgs({ args, allowPositionals: true, options: COMMON_OPTIONS }),
+        "INVALID_ARGUMENT",
+      );
+      if (positionals.length)
+        return yield* Errors.fail("INVALID_ARGUMENT", "Use repair-projections --root <path>");
+      const result = yield* repairProjections(values.root ?? ".");
+      if (values.json) yield* this._output.json(result);
+      else
+        yield* this._output.report({
+          label: "Projection",
+          level: "info",
+          text: `${result.repaired} repaired, ${result.unchanged} unchanged (${result.projectionVersion})`,
+          tags: ["summary"],
+        });
+      return 0;
+    });
+  }
+  private _publish(args: string[]) {
+    return Effect.gen(this, function* () {
+      const { values, positionals } = yield* Errors.attempt(
+        () => parseArgs({ args, allowPositionals: true, options: COMMON_OPTIONS }),
+        "INVALID_ARGUMENT",
+      );
+      if (positionals.length)
+        return yield* Errors.fail("INVALID_ARGUMENT", "Use publish --root <path>");
+      const result = yield* publishVectors(values.root ?? ".").pipe(
+        Effect.provide(PublicationLive),
       );
       if (values.json) yield* this._output.json(result);
       else
         yield* this._output.report({
-          label: "Query intent",
+          label: "Publication",
+          level: result.state === "complete" ? "info" : "warning",
+          text: `${result.state}: ${result.published.length}/${result.expected} submitted, ${result.visible.length} query-visible in ${result.vectorBackend.index}`,
+          tags: ["summary"],
+        });
+      return result.state === "complete" ? 0 : 1;
+    });
+  }
+  private _status(args: string[]) {
+    return Effect.gen(this, function* () {
+      const { values, positionals } = yield* Errors.attempt(
+        () => parseArgs({ args, allowPositionals: true, options: COMMON_OPTIONS }),
+        "INVALID_ARGUMENT",
+      );
+      if (positionals.length)
+        return yield* Errors.fail("INVALID_ARGUMENT", "Use status --root <path>");
+      const result = yield* publicationStatus(values.root ?? ".").pipe(
+        Effect.provide(PublicationLive),
+      );
+      if (values.json) yield* this._output.json(result);
+      else
+        yield* this._output.report({
+          label: "Status",
+          level: result.complete ? "info" : "warning",
+          text: JSON.stringify(result, null, 2),
+        });
+      return result.complete ? 0 : 1;
+    });
+  }
+  private _generateScaleCorpus(args: string[]) {
+    return Effect.gen(this, function* () {
+      const { values, positionals } = yield* Errors.attempt(
+        () =>
+          parseArgs({
+            args,
+            allowPositionals: true,
+            options: {
+              ...COMMON_OPTIONS,
+              chunks: { type: "string" },
+              kind: { type: "string" },
+            },
+          }),
+        "INVALID_ARGUMENT",
+      );
+      if (positionals.length)
+        return yield* Errors.fail(
+          "INVALID_ARGUMENT",
+          "Use generate-scale-corpus --root <path> --chunks <n> [--kind code|text|mixed]",
+        );
+      const chunks = yield* Errors.attempt(
+        () => positiveInteger(values.chunks ?? "", 1),
+        "INVALID_ARGUMENT",
+      );
+      const kind = (values.kind ?? "mixed") as ScaleCorpusKind;
+      if (!["code", "text", "mixed"].includes(kind))
+        return yield* Errors.fail("INVALID_ARGUMENT", "--kind must be code, text, or mixed");
+      const result = yield* generateScaleCorpus(values.root ?? ".", { chunks, kind });
+      if (values.json) yield* this._output.json(result);
+      else
+        yield* this._output.report({
+          label: "Benchmark",
+          level: "info",
+          text: `${result.files} files generated at ${result.root}; estimated chunks=${result.estimatedChunks}`,
+          tags: ["scale-corpus"],
+        });
+      return 0;
+    });
+  }
+  private _benchmarkRelevance(args: string[]) {
+    return Effect.gen(this, function* () {
+      const { values, positionals } = yield* Errors.attempt(
+        () =>
+          parseArgs({
+            args,
+            allowPositionals: true,
+            options: {
+              ...COMMON_OPTIONS,
+              "top-k": { type: "string" },
+              rerank: { type: "boolean" },
+              policy: { type: "string" },
+              "min-relevance": { type: "string" },
+              "run-paid": { type: "boolean" },
+            },
+          }),
+        "INVALID_ARGUMENT",
+      );
+      if (
+        positionals.length !== 1 ||
+        !values.root ||
+        !values["run-paid"] ||
+        !["answer-if-any", "rerank-min-relevance"].includes(values.policy ?? "") ||
+        values["top-k"] === undefined ||
+        (values.policy === "rerank-min-relevance" &&
+          (!values.rerank || values["min-relevance"] === undefined))
+      )
+        return yield* Errors.fail(
+          "INVALID_ARGUMENT",
+          "Use benchmark-relevance <suite.json> --root <corpora-parent> --top-k <n> --policy answer-if-any|rerank-min-relevance --run-paid [--rerank --min-relevance <0..1>] [--json]",
+        );
+      const topK = yield* Errors.attempt(
+        () => positiveInteger(values["top-k"]!, 1),
+        "INVALID_ARGUMENT",
+      );
+      const minRelevance =
+        values["min-relevance"] === undefined
+          ? undefined
+          : yield* Errors.attempt(() => Number(values["min-relevance"]), "INVALID_ARGUMENT");
+      const result = yield* runRelevanceSuite(positionals[0]!, values.root, {
+        topK,
+        rerank: values.rerank ?? false,
+        policy: values.policy as "answer-if-any" | "rerank-min-relevance",
+        minRelevance,
+      }).pipe(
+        Effect.provide(RetrievalLive),
+        Effect.provide(IntentLive),
+        Effect.provide(PublicationLive),
+      );
+      if (values.json) yield* this._output.json(result);
+      else
+        yield* this._output.report({
+          label: "Benchmark",
+          level: result.complete ? "info" : "warning",
+          text: JSON.stringify(result, null, 2),
+        });
+      return result.complete ? 0 : 1;
+    });
+  }
+  private _evaluateRelevance(args: string[]) {
+    return Effect.gen(this, function* () {
+      const { values, positionals } = yield* Errors.attempt(
+        () =>
+          parseArgs({
+            args,
+            allowPositionals: true,
+            options: {
+              json: { type: "boolean" },
+              "top-k": { type: "string" },
+            },
+          }),
+        "INVALID_ARGUMENT",
+      );
+      if (positionals.length !== 1 || values["top-k"] === undefined)
+        return yield* Errors.fail(
+          "INVALID_ARGUMENT",
+          "Use evaluate-relevance <cases.json> --top-k <n> [--json]",
+        );
+      const k = yield* Errors.attempt(
+        () => positiveInteger(values["top-k"]!, 1),
+        "INVALID_ARGUMENT",
+      );
+      const result = yield* evaluateRelevanceFile(positionals[0]!, k);
+      if (values.json) yield* this._output.json(result);
+      else {
+        yield* this._output.report({
+          label: "Benchmark",
+          level: "info",
+          text: `${result.cases} cases: ${result.positiveCases} positive, ${result.negativeCases} negative; cutoff=${result.k}. Metrics are not a semantic quality pass.`,
+          tags: ["summary"],
+        });
+        yield* this._output.report({
+          label: "Benchmark",
           level: "info",
           text: JSON.stringify(result, null, 2),
         });
+      }
+      return 0;
+    });
+  }
+  private _benchmarkSummary(args: string[]) {
+    return Effect.gen(this, function* () {
+      const { values, positionals } = yield* Errors.attempt(
+        () => parseArgs({ args, allowPositionals: true, options: COMMON_OPTIONS }),
+        "INVALID_ARGUMENT",
+      );
+      const result = yield* summarizeBenchmarkReportFiles(positionals);
+      if (values.json) yield* this._output.json(result);
+      else {
+        yield* this._output.report({
+          label: "Benchmark",
+          level: "info",
+          text: `${result.reports} timing reports summarized from ${result.files.length} files`,
+          tags: ["summary"],
+        });
+        for (const summary of result.summaries)
+          yield* this._output.report({
+            label: "Benchmark",
+            level: "info",
+            text: `${summary.stage}: samples=${summary.samples} p50=${summary.p50Milliseconds.toFixed(1)}ms p95=${summary.p95Milliseconds.toFixed(1)}ms min=${summary.minMilliseconds.toFixed(1)}ms max=${summary.maxMilliseconds.toFixed(1)}ms`,
+            tags: ["timing"],
+          });
+      }
       return 0;
     });
   }

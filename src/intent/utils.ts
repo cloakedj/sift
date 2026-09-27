@@ -12,6 +12,9 @@ import {
 } from "./consts.js";
 import type { QueryIntent } from "./types.js";
 
+/**
+ * Extract bounded unique unigram and bigram candidates while retaining local negation.
+ */
 export function candidateTerms(query: string): string[] {
   const words = query.toLowerCase().match(/[\p{L}\p{N}_-]+/gu) ?? [];
   // Bounded contiguous phrases retain local context, including negation.
@@ -42,6 +45,10 @@ export function intentQuestions(terms: string[], taxonomy: TaxonomySnapshot): Qu
   });
   return questions;
 }
+/**
+ * Project validated Jev answers into intent and deterministic embedding text.
+ * Keep negative signals separate from positively projected fields.
+ */
 export function buildIntent(
   rawQuery: string,
   terms: string[],

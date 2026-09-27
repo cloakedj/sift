@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { Context, Effect, Layer } from "effect";
 import { Errors } from "../errors/index.js";
@@ -6,9 +7,12 @@ import { InventoryServiceTag, type InventoryService } from "../inventory/index.j
 import type { TaxonomySnapshot } from "../taxonomy/types.js";
 import { Stores, type StoreService } from "./store.js";
 import { DIMENSIONS } from "../taxonomy/consts.js";
+import { PROJECTION_VERSION } from "./consts.js";
+import { embeddingDocument, summarizeProjections } from "./utils.js";
 import type {
   CandidateEvidenceSummary,
   ClassificationDimensionSummary,
+  ProjectionRepairReport,
   QualityFinding,
   RunManifest,
   SemanticChunkRecord,
@@ -22,6 +26,9 @@ export class InspectionService {
     private readonly _inventory: InventoryService,
     private readonly _stores: StoreService,
   ) {}
+  /**
+   * Return source-current semantic records and expose missing or stale artifacts.
+   */
   public records(root: string) {
     return Effect.gen(this, function* () {
       const { directory, manifest } = yield* this._manifest(root);
@@ -70,6 +77,43 @@ export class InspectionService {
       };
     });
   }
+  public repairProjections(root: string) {
+    return Effect.scoped(
+      Effect.gen(this, function* () {
+        const inspected = yield* this.records(root);
+        if (!inspected.complete)
+          return yield* Errors.fail(
+            "INCOMPLETE",
+            "Projection repair requires complete current semantic records",
+          );
+        const store = yield* this._stores.open(root, randomUUID());
+        let repaired = 0;
+        let unchanged = 0;
+        for (const record of inspected.records) {
+          const embedding = embeddingDocument(record);
+          if (
+            record.embeddingDocument === embedding &&
+            record.provenance.projectionVersion === PROJECTION_VERSION
+          ) {
+            unchanged++;
+            continue;
+          }
+          repaired++;
+          yield* store.write(`records/${record.id}.json`, {
+            ...record,
+            embeddingDocument: embedding,
+            provenance: { ...record.provenance, projectionVersion: PROJECTION_VERSION },
+          });
+        }
+        return {
+          root: inspected.manifest.root,
+          repaired,
+          unchanged,
+          projectionVersion: PROJECTION_VERSION,
+        } satisfies ProjectionRepairReport;
+      }),
+    );
+  }
   public taxonomy(root: string) {
     return Effect.gen(this, function* () {
       const { directory } = yield* this._manifest(root);
@@ -82,6 +126,10 @@ export class InspectionService {
       return taxonomy;
     });
   }
+  /**
+   * Summarize candidate evidence and classification coverage for manual quality review.
+   * Completeness describes local artifacts, not a semantic-quality pass.
+   */
   public validation(root: string) {
     return Effect.gen(this, function* () {
       const inspected = yield* this.records(root);
@@ -212,8 +260,16 @@ export class InspectionService {
           subject: "classification",
           message: `${chunksWithoutLabels.length} current chunks have no positive taxonomy label scores.`,
         });
+      const projections = summarizeProjections(inspected.records);
+      if (projections.collidingRecords)
+        findings.push({
+          severity: "warning",
+          subject: "projections",
+          message: `${projections.collidingRecords} current chunks share identical embedding documents in ${projections.collisionGroups.length} groups; vectors cannot distinguish members of each group.`,
+        });
       return {
         root: inspected.manifest.root,
+        projections,
         complete: inspected.complete,
         taxonomy: {
           candidates: taxonomy.harvest.candidates.length,
@@ -260,3 +316,5 @@ export const inspectTaxonomy = (root: string) =>
   Effect.flatMap(Inspection, (service) => service.taxonomy(root));
 export const inspectValidation = (root: string) =>
   Effect.flatMap(Inspection, (service) => service.validation(root));
+export const repairProjections = (root: string) =>
+  Effect.flatMap(Inspection, (service) => service.repairProjections(root));

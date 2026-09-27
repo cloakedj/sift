@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "corpora": [
+    {
+      "scope": "code",
+      "files": { "session.ts": "cc338812e359fee7e3c703ee90a67db2be140e51f75fc9f938448f7280627d13" },
+      "chunks": [{ "key": "revoke", "path": "session.ts", "startLine": 1, "endLine": 3 }],
+      "cases": [
+        {
+          "id": "code-revoke",
+          "query": "Where is a user's session token removed?",
+          "relevant": ["revoke"],
+          "rationale": "The function deletes the user's entry from the supplied token map."
+        },
+        {
+          "id": "code-expiry-absent",
+          "query": "Where are expired sessions checked before access is allowed?",
+          "relevant": [],
+          "rationale": "Deleting an entry does not inspect expiry or authorize access."
+        },
+        {
+          "id": "code-permission-absent",
+          "query": "Where are administrator permissions verified before a session is revoked?",
+          "relevant": [],
+          "rationale": "The function contains no permission check or caller context."
+        }
+      ]
+    },
+    {
+      "scope": "text",
+      "files": {
+        "handbook.md": "ad38302a41d7d712e49f130b8b8e3683b099fc8de6a37a9f5a05f15da8a32708"
+      },
+      "chunks": [
+        { "key": "title", "path": "handbook.md", "startLine": 1, "endLine": 2 },
+        { "key": "departure", "path": "handbook.md", "startLine": 3, "endLine": 4 },
+        { "key": "recovery-heading", "path": "handbook.md", "startLine": 5, "endLine": 6 },
+        { "key": "recovery", "path": "handbook.md", "startLine": 7, "endLine": 7 }
+      ],
+      "cases": [
+        {
+          "id": "text-recovery",
+          "query": "Who should restore access, and what must happen first?",
+          "relevant": ["recovery"],
+          "rationale": "Only the recovery instruction names the administrator and identity verification; the recovery heading alone is insufficient."
+        },
+        {
+          "id": "text-departure",
+          "query": "What should happen to active sessions when a colleague leaves?",
+          "relevant": ["departure"],
+          "rationale": "The departure instruction explicitly calls for invalidating active sessions."
+        },
+        {
+          "id": "text-self-service-absent",
+          "query": "How can a user restore access without involving an administrator?",
+          "relevant": [],
+          "rationale": "The only recovery instruction requires an administrator; no self-service procedure is supplied."
+        },
+        {
+          "id": "text-verification-method-absent",
+          "query": "Which identity documents must an administrator inspect to verify identity?",
+          "relevant": [],
+          "rationale": "Identity verification is mentioned but no documents or verification method are specified."
+        }
+      ]
+    },
+    {
+      "scope": "mixed",
+      "files": {
+        "queue.ts": "dcaa6f4634461af2b755a6fc0248c21ff8db4db87824de7b6febcf0dfd83d681",
+        "operations.txt": "8d70ffc5eba42060d9e3d4571d86c41771e6e6e9bf771b6ebd9d98dbe3def7b5"
+      },
+      "chunks": [
+        { "key": "delay", "path": "queue.ts", "startLine": 1, "endLine": 3 },
+        { "key": "failure-heading", "path": "operations.txt", "startLine": 1, "endLine": 2 },
+        { "key": "retry-guidance", "path": "operations.txt", "startLine": 3, "endLine": 4 }
+      ],
+      "cases": [
+        {
+          "id": "mixed-delay-code",
+          "query": "Which function computes exponential retry delay capped at 30000?",
+          "relevant": ["delay"],
+          "rationale": "Only retryDelay implements the exponential expression and numeric cap; the guidance does not specify either."
+        },
+        {
+          "id": "mixed-stop-guidance",
+          "query": "What should happen after the configured retry attempt limit is reached?",
+          "relevant": ["retry-guidance"],
+          "rationale": "The instructions say to stop and notify an operator. The delay calculator does neither."
+        },
+        {
+          "id": "mixed-retry-evidence",
+          "query": "Find code or guidance for increasing the pause between retry attempts.",
+          "relevant": ["delay", "retry-guidance"],
+          "rationale": "Both the exponential delay expression and the increasing-pause instruction directly support this broad query."
+        },
+        {
+          "id": "mixed-notification-code-absent",
+          "query": "Which function sends an operator notification when retries are exhausted?",
+          "relevant": [],
+          "rationale": "Notification is requested in prose, but no function implements it; retryDelay only returns a number."
+        },
+        {
+          "id": "mixed-permanent-absent",
+          "query": "Where does the code distinguish temporary failures from permanent failures?",
+          "relevant": [],
+          "rationale": "The sole function receives an attempt number and performs no failure classification."
+        }
+      ]
+    }
+  ]
+}

@@ -8,6 +8,9 @@ import type { DiscoveryPolicy, Inventory } from "./types.js";
 
 export class InventoryService {
   public constructor(private readonly _fs: FileSystemService) {}
+  /**
+   * Inventory permitted resources and bounded chunks without inference or writes.
+   */
   public discover(
     rootArg: string,
     policy: DiscoveryPolicy = defaultPolicy,

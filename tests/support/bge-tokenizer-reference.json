@@ -1,0 +1,70 @@
+{
+  "reference": "huggingface/tokenizers Python 0.22.2 (Rust tokenizer), truncation/padding disabled",
+  "revision": "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a",
+  "cases": [
+    {
+      "text": "",
+      "ids": [101, 102]
+    },
+    {
+      "text": " \t\n",
+      "ids": [101, 102]
+    },
+    {
+      "text": "\u0000\u0001",
+      "ids": [101, 102]
+    },
+    {
+      "text": "Hello, world!",
+      "ids": [101, 7592, 1010, 2088, 999, 102]
+    },
+    {
+      "text": "Café déjà vu",
+      "ids": [101, 7668, 2139, 3900, 24728, 102]
+    },
+    {
+      "text": "Café",
+      "ids": [101, 7668, 102]
+    },
+    {
+      "text": "中文测试",
+      "ids": [101, 1746, 1861, 100, 100, 102]
+    },
+    {
+      "text": "😀 retry 🚀",
+      "ids": [101, 100, 2128, 11129, 100, 102]
+    },
+    {
+      "text": "export const retry_count = queue.retryAfter(42);",
+      "ids": [
+        101, 9167, 9530, 3367, 2128, 11129, 1035, 4175, 1027, 24240, 1012, 2128, 11129, 10354, 3334,
+        1006, 4413, 1007, 1025, 102
+      ]
+    },
+    {
+      "text": "[CLS] hello [SEP] [MASK] [UNK] [PAD]",
+      "ids": [101, 101, 7592, 102, 103, 100, 0, 102]
+    },
+    {
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ids": [
+        101, 13360, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057,
+        11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057,
+        11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057,
+        11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 11057, 2050, 102
+      ]
+    },
+    {
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ids": [101, 100, 102]
+    },
+    {
+      "text": "İstanbul Straße Σίσυφος",
+      "ids": [101, 9960, 2358, 27807, 1173, 18199, 29733, 29735, 29736, 15297, 102]
+    },
+    {
+      "text": "a‍b c",
+      "ids": [101, 11113, 1039, 102]
+    }
+  ]
+}

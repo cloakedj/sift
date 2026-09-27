@@ -7,7 +7,7 @@ import { Jev, type JevService } from "../typesafe/client.js";
 import { ClassificationService } from "./classify.js";
 import { CLASSIFICATION_CONCURRENCY } from "./consts.js";
 import { Stores, type StoreService } from "./store.js";
-import type { OnboardOptions, RunManifest } from "./types.js";
+import type { OnboardOptions, OnboardResult, RunManifest } from "./types.js";
 
 export class OnboardingService {
   private readonly _classifier: ClassificationService;
@@ -20,9 +20,21 @@ export class OnboardingService {
     this._classifier = new ClassificationService(jev);
   }
 
+  /**
+   * Govern candidates and classify chunks in a resumable, single-writer run.
+   * Record partial progress and explicit failures instead of substituting lexical results.
+   */
   public onboard(root: string, options: OnboardOptions = {}) {
     return Effect.scoped(
       Effect.gen(this, function* () {
+        const timings: OnboardResult["timings"] = [];
+        const onboardStarted = performance.now();
+        let stageStarted = onboardStarted;
+        const mark = (stage: string) => {
+          const now = performance.now();
+          timings.push({ stage, milliseconds: now - stageStarted });
+          stageStarted = now;
+        };
         const concurrency = options.concurrency ?? CLASSIFICATION_CONCURRENCY;
         if (
           !Number.isSafeInteger(concurrency) ||
@@ -34,9 +46,12 @@ export class OnboardingService {
             "INVALID_ARGUMENT",
             "Concurrency and limit must be positive integers",
           );
+        mark("configuration");
         const inventory = yield* this._inventory.discover(root);
+        mark("resource-discovery");
         const runId = randomUUID();
         const store = yield* this._stores.open(root, runId);
+        mark("store-open");
         const chunks = inventory.chunks.slice(0, options.limit);
         const manifest: RunManifest = {
           schemaVersion: 2,
@@ -56,6 +71,7 @@ export class OnboardingService {
           startedAt: new Date().toISOString(),
         };
         yield* store.write("index.json", manifest);
+        mark("manifest-start-write");
         yield* store.receipt(
           { kind: "run", id: runId },
           {
@@ -66,6 +82,7 @@ export class OnboardingService {
           },
         );
         const taxonomy = yield* this._taxonomy.govern(inventory, store, options.rerunGovernance);
+        mark("taxonomy-governance");
         manifest.taxonomyVersion = taxonomy.version;
         for (const judgment of taxonomy.judgments)
           if (judgment.status === "failed")
@@ -104,6 +121,7 @@ export class OnboardingService {
             }),
           { concurrency, discard: true },
         );
+        mark("chunk-classification");
         manifest.records.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
         manifest.state =
           manifest.failures.length || manifest.deferred.length ? "incomplete" : "complete";
@@ -120,7 +138,9 @@ export class OnboardingService {
           },
         );
         yield* store.write("index.json", manifest);
-        return { manifest, taxonomy };
+        mark("manifest-finish-write");
+        timings.push({ stage: "end-to-end", milliseconds: performance.now() - onboardStarted });
+        return { manifest, taxonomy, timings } satisfies OnboardResult;
       }),
     );
   }

@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { test } from "node:test";
-import { onboard, inspectRecords, inspectValidation } from "./support/runtime.js";
+import {
+  onboard,
+  inspectRecords,
+  inspectValidation,
+  repairProjections,
+} from "./support/runtime.js";
 import { embeddingDocument } from "../src/onboarding/utils.js";
 import { fakeJev } from "./support/jev.js";
 
@@ -27,6 +32,10 @@ for (const scope of ["code", "text", "mixed"])
       const first = await onboard(root, client);
       assert.equal(first.manifest.state, "complete");
       assert.ok(first.manifest.classified > 0);
+      assert.ok(first.timings.some((timing) => timing.stage === "resource-discovery"));
+      assert.ok(first.timings.some((timing) => timing.stage === "taxonomy-governance"));
+      assert.ok(first.timings.some((timing) => timing.stage === "chunk-classification"));
+      assert.ok(first.timings.every((timing) => timing.milliseconds >= 0));
       const firstClassification = calls.findIndex((call) => "resourceKind" in call.questions);
       assert.ok(firstClassification > 0);
       assert.ok(calls.slice(firstClassification).every((call) => "resourceKind" in call.questions));
@@ -40,6 +49,9 @@ for (const scope of ["code", "text", "mixed"])
       assert.equal(inspected.complete, true);
       for (const record of inspected.records) {
         assert.equal(record.embeddingDocument, embeddingDocument(record));
+        assert.match(record.embeddingDocument, /Projection: semantic-projection-v2/u);
+        assert.match(record.embeddingDocument, /Content preview:/u);
+        assert.ok(Buffer.byteLength(record.embeddingDocument, "utf8") <= 500);
         assert.equal(record.provenance.model, client.model);
         assert.ok(record.resource.uri.startsWith("file:"));
         assert.ok(record.resource.range.endByte > record.resource.range.startByte);
@@ -55,6 +67,17 @@ for (const scope of ["code", "text", "mixed"])
       const validation = await inspectValidation(root);
       assert.equal(validation.complete, true);
       assert.equal(validation.classifications.records, inspected.records.length);
+      assert.equal(validation.projections.records, inspected.records.length);
+      assert.equal(
+        validation.projections.uniqueDocuments,
+        new Set(inspected.records.map((record) => record.embeddingDocument)).size,
+      );
+      if (scope === "text")
+        assert.equal(validation.projections.uniqueDocuments, inspected.records.length);
+      assert.equal(
+        validation.findings.some((finding) => finding.subject === "projections"),
+        validation.projections.collidingRecords > 0,
+      );
       assert.ok(
         validation.taxonomy.selectedCandidates.every((candidate) => candidate.evidenceCount > 0),
       );
@@ -74,6 +97,7 @@ for (const scope of ["code", "text", "mixed"])
         { encoding: "utf8", env: { ...process.env, TYPESAFE_API_KEY: "" } },
       );
       assert.equal(JSON.parse(validationJson).classifications.records, inspected.records.length);
+      assert.deepEqual(JSON.parse(validationJson).projections, validation.projections);
       assert.ok((await readdir(join(root, ".jev"))).every((name) => !name.includes("vector")));
     }));
 
@@ -105,6 +129,14 @@ test("classification failures remain explicit, resume retries only failures, and
     assert.equal(stale.records.length, 0);
     assert.equal(stale.stale.length, 3);
     assert.equal(stale.complete, false);
+    const validation = await inspectValidation(root);
+    assert.equal(validation.complete, false);
+    assert.deepEqual(validation.projections, {
+      records: 0,
+      uniqueDocuments: 0,
+      collidingRecords: 0,
+      collisionGroups: [],
+    });
     const changed = await onboard(root, client);
     assert.equal(changed.manifest.reused, 0);
     await rm(join(root, "source.ts"));
@@ -188,10 +220,20 @@ test("projection-only changes reuse classification and repair the deterministic 
     record.provenance.projectionVersion = "old-version";
     await writeFile(path, JSON.stringify(record));
     const calls = fake.calls.length;
-    const next = await onboard(root, fake.client);
-    assert.equal(next.manifest.reused, 1);
+    const repaired = await repairProjections(root);
+    assert.equal(repaired.repaired, 1);
+    assert.equal(repaired.projectionVersion, "semantic-projection-v2");
     assert.equal(fake.calls.length, calls);
     assert.notEqual(JSON.parse(await readFile(path, "utf8")).embeddingDocument, "old projection");
+    const unchanged = await repairProjections(root);
+    assert.equal(unchanged.unchanged, 1);
+    const cli = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "src/cli/index.ts", "repair-projections", "--root", root, "--json"],
+      { encoding: "utf8", env: { ...process.env, TYPESAFE_API_KEY: "" } },
+    );
+    assert.equal(cli.status, 0);
+    assert.equal(JSON.parse(cli.stdout).unchanged, 1);
   }));
 
 test("missing credentials exit nonzero with labelled stderr and no semantic writes", async () =>

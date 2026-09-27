@@ -30,6 +30,9 @@ export class ResourceReader {
     this._id = hash(this._uri);
     this._document = [".md", ".markdown", ".txt", ".rst"].includes(extname(_file).toLowerCase());
   }
+  /**
+   * Stream the source into validated chunks and release the stream on completion or failure.
+   */
   public read() {
     return Effect.scoped(
       Effect.gen(this, function* () {
@@ -71,6 +74,9 @@ export class ResourceReader {
       }),
     );
   }
+  /**
+   * Materialize the current window once with stable hashes and source ranges.
+   */
   private _emit(): void {
     if (!this._window.length || this._window.at(-1)!.end <= this._lastEmittedEnd) return;
     const text = this._window.map((unit) => unit.text).join("");
@@ -90,6 +96,9 @@ export class ResourceReader {
     });
     this._lastEmittedEnd = last.end;
   }
+  /**
+   * Decode a bounded UTF-8 unit and advance the chunk window with configured overlap.
+   */
   private _accept(buffer: Buffer): void {
     let text: string;
     try {
@@ -119,6 +128,9 @@ export class ResourceReader {
       this._window = [];
     }
   }
+  /**
+   * Hash incoming bytes, reject binary controls, and split pending data on UTF-8 boundaries.
+   */
   private _consume(buffer: Buffer): void {
     this._digest.update(buffer);
     this._bytes += buffer.length;

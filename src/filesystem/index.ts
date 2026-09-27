@@ -53,6 +53,9 @@ export class FileSystemService {
       Errors.async(() => rm(path, { force: true }), "IO", { path, operation: "remove" }),
     );
   }
+  /**
+   * Parse persisted JSON; return undefined only when the file does not exist.
+   */
   public readJson<T>(path: string) {
     return this.read(path).pipe(
       Effect.flatMap((raw) => Errors.attempt(() => JSON.parse(raw) as T, "INVALID_DATA", { path })),

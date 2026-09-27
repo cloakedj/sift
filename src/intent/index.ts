@@ -18,6 +18,10 @@ export class IntentService {
     private readonly _stores: StoreService,
     private readonly _inspection: InspectionService,
   ) {}
+  /**
+   * Reuse validated intent or invoke Jev and atomically cache its structured answers.
+   * Provider acquisition is deferred until a cache miss; taxonomy is never mutated.
+   */
   public infer(
     root: string,
     rawQuery: string,
@@ -80,7 +84,7 @@ export class IntentService {
             () => buildIntent(rawQuery, terms, taxonomy, cached.response, fingerprint),
             "INVALID_DATA",
           );
-          return { intent, reused: true, retrieval: "not-implemented" as const };
+          return { intent, reused: true, retrieval: "not-requested" as const };
         }
       }
       const client = yield* provider;
@@ -104,7 +108,7 @@ export class IntentService {
         fingerprint,
         response: cachedResponse,
       } satisfies IntentCache);
-      return { intent, reused: false, retrieval: "not-implemented" as const };
+      return { intent, reused: false, retrieval: "not-requested" as const };
     });
   }
 }
