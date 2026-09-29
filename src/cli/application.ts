@@ -137,12 +137,13 @@ export class CliApplication {
           text: `${result.manifest.state}: ${result.manifest.classified} classified, ${result.manifest.reused} reused, ${result.manifest.failures.length} failures, ${result.manifest.deferred.length} deferred`,
           tags: ["summary"],
         });
-        yield* this._output.report({
-          label: "Onboarding",
-          level: "info",
-          text: `Timings: ${result.timings.map((timing) => `${timing.stage}=${timing.milliseconds.toFixed(1)}ms`).join(", ")}`,
-          tags: ["timing"],
-        });
+        yield* this._output.table(
+          { label: "Onboarding", level: "info", tags: ["timing"] },
+          {
+            columns: [{ heading: "Stage" }, { heading: "Duration (ms)", align: "right" }],
+            rows: result.timings.map((timing) => [timing.stage, timing.milliseconds.toFixed(1)]),
+          },
+        );
         for (const failure of result.manifest.failures)
           yield* this._output.error(
             "Jev",
@@ -200,9 +201,11 @@ export class CliApplication {
             options: {
               ...COMMON_OPTIONS,
               "show-intent": { type: "boolean" },
+              "min-relevance": { type: "string" },
               explain: { type: "boolean" },
               rerank: { type: "boolean" },
-              "lexical-fallback": { type: "boolean" },
+              "semantic-only": { type: "boolean" },
+              anchor: { type: "string", multiple: true },
               "top-k": { type: "string" },
             },
           }),
@@ -210,36 +213,63 @@ export class CliApplication {
       );
       if (
         values["show-intent"] &&
-        (values.explain || values["top-k"] || values.rerank || values["lexical-fallback"])
+        (values.explain ||
+          values["top-k"] ||
+          values.rerank ||
+          values["semantic-only"] ||
+          values.anchor ||
+          values["min-relevance"] !== undefined)
       )
         return yield* Errors.fail(
           "INVALID_ARGUMENT",
-          "--explain, --top-k, --rerank and --lexical-fallback require retrieval, not --show-intent",
+          "--explain, --top-k, --rerank, --min-relevance, --semantic-only and --anchor require retrieval, not --show-intent",
         );
       const topK =
         values["top-k"] === undefined
           ? undefined
           : yield* Errors.attempt(() => positiveInteger(values["top-k"], 8), "INVALID_ARGUMENT");
-      const result = yield* values["show-intent"]
-        ? inferQuery(values.root ?? ".", positionals.join(" ")).pipe(Effect.provide(IntentLive))
-        : searchSemantic(values.root ?? ".", positionals.join(" "), {
-            explain: values.explain,
-            lexicalFallback: values["lexical-fallback"],
-            rerank: values.rerank,
-            topK,
-          }).pipe(
-            Effect.provide(RetrievalLive),
-            Effect.provide(IntentLive),
-            Effect.provide(PublicationLive),
+      const result = yield* Effect.scoped(
+        Effect.gen(this, function* () {
+          yield* this._output.activity(
+            values["show-intent"] ? "Inferring query intent" : "Searching semantic index",
           );
+          return yield* values["show-intent"]
+            ? inferQuery(values.root ?? ".", positionals.join(" ")).pipe(Effect.provide(IntentLive))
+            : searchSemantic(values.root ?? ".", positionals.join(" "), {
+                explain: values.explain,
+                discovery: values["semantic-only"] ? "semantic" : "hybrid",
+                anchors: values.anchor?.map((value) => ({ kind: "literal" as const, value })),
+                rerank: values.rerank,
+                minRelevance:
+                  values["min-relevance"] === undefined
+                    ? undefined
+                    : values["min-relevance"].trim() === ""
+                      ? NaN
+                      : Number(values["min-relevance"]),
+                topK,
+              }).pipe(
+                Effect.provide(RetrievalLive),
+                Effect.provide(IntentLive),
+                Effect.provide(PublicationLive),
+              );
+        }),
+      );
       if (values.json) yield* this._output.json(result);
       else if ("results" in result && !values.explain) {
-        for (const match of result.results)
+        for (const match of result.results) {
           yield* this._output.report({
             label: "Search",
             level: "info",
-            text: `${match.rank}. [${match.source ?? "semantic"}] ${match.record.resource.uri}:${match.record.resource.range.startLine}-${match.record.resource.range.endLine}\n${match.record.resource.textPreview}`,
+            text: `${match.rank}. [${match.source ?? "semantic"}] ${match.record.resource.structure?.label ?? match.record.resource.structure?.symbol ?? ""} ${match.record.resource.uri}:${match.record.resource.range.startLine}-${match.record.resource.range.endLine}\n${match.record.resource.textPreview}`,
           });
+          for (const context of match.context ?? [])
+            yield* this._output.report({
+              label: "Search",
+              level: "info",
+              tags: ["supporting-context", context.relation],
+              text: `${context.record.resource.structure?.label ?? context.record.resource.structure?.symbol ?? ""} ${context.record.resource.uri}:${context.record.resource.range.startLine}-${context.record.resource.range.endLine}\n${context.record.resource.textPreview}`,
+            });
+        }
         for (const finding of result.findings)
           yield* this._output.report({
             label: "Search",
@@ -472,13 +502,27 @@ export class CliApplication {
           text: `${result.reports} timing reports summarized from ${result.files.length} files`,
           tags: ["summary"],
         });
-        for (const summary of result.summaries)
-          yield* this._output.report({
-            label: "Benchmark",
-            level: "info",
-            text: `${summary.stage}: samples=${summary.samples} p50=${summary.p50Milliseconds.toFixed(1)}ms p95=${summary.p95Milliseconds.toFixed(1)}ms min=${summary.minMilliseconds.toFixed(1)}ms max=${summary.maxMilliseconds.toFixed(1)}ms`,
-            tags: ["timing"],
-          });
+        yield* this._output.table(
+          { label: "Benchmark", level: "info", tags: ["timing"] },
+          {
+            columns: [
+              { heading: "Stage" },
+              { heading: "Samples", align: "right" },
+              { heading: "p50 (ms)", align: "right" },
+              { heading: "p95 (ms)", align: "right" },
+              { heading: "Min (ms)", align: "right" },
+              { heading: "Max (ms)", align: "right" },
+            ],
+            rows: result.summaries.map((summary) => [
+              summary.stage,
+              String(summary.samples),
+              summary.p50Milliseconds.toFixed(1),
+              summary.p95Milliseconds.toFixed(1),
+              summary.minMilliseconds.toFixed(1),
+              summary.maxMilliseconds.toFixed(1),
+            ]),
+          },
+        );
       }
       return 0;
     });

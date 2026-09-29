@@ -44,7 +44,8 @@ export class ClassificationService {
         },
         resourceHash: resource.resourceHash,
         chunkHash: chunk.chunkHash,
-        textPreview: [...chunk.text].slice(0, 240).join(""),
+        textPreview: chunk.text,
+        structure: chunk.structure,
       };
       const questions: Questions = {
         resourceKind: choice(
@@ -59,7 +60,15 @@ export class ClassificationService {
         );
       const request: SystemOneRequest<Questions> = {
         model: client.model,
-        state: { resource: facts, text: chunk.text },
+        state: {
+          resource: {
+            uri: facts.uri,
+            mediaType: facts.mediaType,
+            label: chunk.structure?.label ?? chunk.structure?.symbol ?? "",
+            container: chunk.structure?.container ?? "",
+          },
+          text: chunk.text,
+        },
         questions,
       };
       const fingerprint = hash(
@@ -77,7 +86,8 @@ export class ClassificationService {
       ) {
         const record: SemanticChunkRecord = {
           ...cached,
-          embeddingDocument: embeddingDocument(cached),
+          resource: facts,
+          embeddingDocument: embeddingDocument({ ...cached, resource: facts }),
           provenance: { ...cached.provenance, projectionVersion: PROJECTION_VERSION },
         };
         yield* store.write(`records/${chunk.id}.json`, record);

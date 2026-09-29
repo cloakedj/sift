@@ -1,6 +1,12 @@
 import { extname } from "node:path";
 import { DIMENSIONS } from "../taxonomy/consts.js";
-import { EMBEDDING_DOCUMENT_BYTES, MEDIA_TYPES, PROJECTION_VERSION } from "./consts.js";
+import {
+  EMBEDDING_DOCUMENT_BYTES,
+  MEDIA_TYPES,
+  PROJECTION_SYMBOL_BYTES,
+  PROJECTION_MIN_LABEL_SCORE,
+  PROJECTION_LABELS_PER_DIMENSION,
+} from "./consts.js";
 import type { ProjectionSummary, SemanticChunkRecord } from "./types.js";
 import { hash } from "../shared/utils.js";
 
@@ -64,24 +70,28 @@ function pushBoundedLine(lines: string[], line: string) {
 export function embeddingDocument(record: Pick<SemanticChunkRecord, "resource" | "taxonomy">) {
   const preview = record.resource.textPreview.replace(/\s+/gu, " ").trim();
   const lines: string[] = [];
-  for (const line of [
-    `Projection: ${PROJECTION_VERSION}`,
-    `Resource: ${record.resource.uri}`,
-    `Lines: ${record.resource.range.startLine}-${record.resource.range.endLine}`,
-    `Media type: ${record.resource.mediaType}`,
-  ])
-    pushBoundedLine(lines, line);
-  if (record.taxonomy.resourceKind)
-    pushBoundedLine(lines, `Kind: ${record.taxonomy.resourceKind.nameSnapshot}`);
-  if (preview) pushBoundedLine(lines, `Content preview: ${preview}`);
+  const label = record.resource.structure?.label ?? record.resource.structure?.symbol;
+  if (label) pushBoundedLine(lines, `Source: ${utf8Prefix(label, PROJECTION_SYMBOL_BYTES)}`);
+  // Spend the budget on source evidence, not absolute paths or bookkeeping.
+  // Retain both ends of oversized content so return values/constraints survive.
+  const remaining =
+    EMBEDDING_DOCUMENT_BYTES - Buffer.byteLength(lines.join("\n")) - (lines.length ? 1 : 0);
+  if (Buffer.byteLength(preview) > remaining) {
+    const head = utf8Prefix(preview, Math.floor((remaining - 5) * 0.65));
+    const tail = [
+      ...utf8Prefix([...preview].reverse().join(""), remaining - 5 - Buffer.byteLength(head)),
+    ]
+      .reverse()
+      .join("");
+    pushBoundedLine(lines, `${head} ... ${tail}`);
+  } else if (preview) pushBoundedLine(lines, preview);
   for (const dimension of DIMENSIONS) {
-    const values = [...record.taxonomy[dimension]].sort((a, b) =>
-      a.labelId < b.labelId ? -1 : a.labelId > b.labelId ? 1 : 0,
-    );
-    pushBoundedLine(
-      lines,
-      `${dimension}: ${values.map((label) => `${label.nameSnapshot} (${label.score.toFixed(4)})`).join("; ")}`,
-    );
+    const values = record.taxonomy[dimension]
+      .filter((label) => label.score >= PROJECTION_MIN_LABEL_SCORE)
+      .sort((a, b) => b.score - a.score || a.labelId.localeCompare(b.labelId))
+      .slice(0, PROJECTION_LABELS_PER_DIMENSION);
+    if (!values.length) continue;
+    pushBoundedLine(lines, `${dimension}: ${values.map((label) => label.nameSnapshot).join("; ")}`);
   }
   return lines.join("\n");
 }

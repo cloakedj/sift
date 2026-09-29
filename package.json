@@ -8,8 +8,8 @@
     "cli": "tsx --env-file-if-exists=.env src/cli/index.ts",
     "test": "tsx --test tests/*.test.ts",
     "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.json && cp src/publication/input/assets/LICENSE src/publication/input/assets/README.md dist/publication/input/assets/",
-    "typecheck": "tsc -p tsconfig.tests.json --noEmit",
+    "build": "node node_modules/typescript/bin/tsc -p tsconfig.json && cp src/publication/input/assets/LICENSE src/publication/input/assets/README.md dist/publication/input/assets/",
+    "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.tests.json --noEmit",
     "lint": "oxlint --deny-warnings src tests",
     "lint:fix": "oxlint --fix --deny-warnings src tests",
     "format": "oxfmt --write src tests package.json package-lock.json tsconfig.json tsconfig.tests.json .oxfmtrc.json .oxlintrc.json",
@@ -18,9 +18,13 @@
   "dependencies": {
     "@huggingface/tokenizers": "0.2.0",
     "@typesafe-ai/sdk": "latest",
-    "effect": "latest"
+    "cli-progress": "^3.12.0",
+    "effect": "latest",
+    "ora": "^9.4.1",
+    "typescript-ast": "npm:typescript@5.9.3"
   },
   "devDependencies": {
+    "@types/cli-progress": "^3.11.6",
     "@types/node": "latest",
     "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0",

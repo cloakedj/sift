@@ -79,6 +79,9 @@ test("query intent validates cache, invalidates inputs, preserves negatives, and
     assert.equal(first.reused, false);
     assert.equal(first.retrieval, "not-requested");
     assert.ok(first.intent.negativeSignals.includes("password"));
+    assert.ok(first.intent.embeddingDocument.startsWith(`Query: ${query}\n`));
+    assert.ok(!first.intent.embeddingDocument.includes("concepts:"));
+    assert.ok(!first.intent.embeddingDocument.includes("operations:"));
     assert.ok(
       !first.intent.embeddingDocument
         .split("\n")

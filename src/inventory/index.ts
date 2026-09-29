@@ -4,6 +4,8 @@ import { Errors, type AppError } from "../errors/index.js";
 import { FileSystem, type FileSystemService } from "../filesystem/index.js";
 import { CHUNKER_VERSION, MAX_CHUNK_BYTES, MAX_CHUNK_LINES, defaultPolicy } from "./consts.js";
 import { ResourceReader } from "./reader.js";
+import { linkCodeReferences } from "./syntax/utils.js";
+import { linkStructure } from "./structure/utils.js";
 import type { DiscoveryPolicy, Inventory } from "./types.js";
 
 export class InventoryService {
@@ -34,6 +36,8 @@ export class InventoryService {
         published: false,
       };
       yield* this._visit(root, base, policy, inventory);
+      linkCodeReferences(inventory.chunks);
+      linkStructure(inventory.chunks);
       inventory.complete = inventory.failures.length === 0;
       return inventory;
     });

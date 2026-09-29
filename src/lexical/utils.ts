@@ -4,11 +4,15 @@ export const tokenize = (input: string) => [
   ...new Set(
     input
       .toLowerCase()
-      .split(/[^a-z0-9_.$/-]+/)
+      .split(/[^\p{L}\p{N}_.$/-]+/u)
       .filter((term) => term.length >= 2),
   ),
 ];
-export function scoreChunk(chunk: IndexedChunk, query: string, terms: string[]) {
+export function scoreChunk(
+  chunk: Pick<IndexedChunk, "text" | "path" | "terms">,
+  query: string,
+  terms: string[],
+) {
   const text = chunk.text.toLowerCase();
   const path = chunk.path.toLowerCase();
   const vocabulary = new Set(chunk.terms);

@@ -1,3 +1,4 @@
+import type { ChunkStructure } from "../inventory/structure/types.js";
 import type { Effect } from "effect";
 import type { AppError } from "../errors/index.js";
 import type { ErrorDetails } from "../errors/types.js";
@@ -21,6 +22,7 @@ export interface SemanticChunkRecord {
     resourceHash: string;
     chunkHash: string;
     textPreview: string;
+    structure?: ChunkStructure;
   };
   taxonomy: Record<Dimension, LabelScore[]> & { resourceKind?: LabelScore };
   embeddingDocument: string;

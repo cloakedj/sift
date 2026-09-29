@@ -97,7 +97,7 @@ test("runner preserves every controlled observation and labels its answer baseli
   }
   assert.equal(calls.length, 24);
   assert.ok(
-    calls.every((call) => call.explain && call.lexicalFallback === false && call.topK === 8),
+    calls.every((call) => call.explain && call.discovery === "semantic" && call.topK === 8),
   );
 });
 
@@ -201,7 +201,7 @@ test("runner rejects wrong generations, foreign chunks and duplicate results", a
               if (kind === "duplicate") report.results.push(report.results[0]!);
               if (kind === "query") report.query = "wrong query";
               if (kind === "ranking") report.ranking = "jev-relevance";
-              if (kind === "lexical") report.results[0]!.source = "lexical-fallback";
+              if (kind === "lexical") report.results[0]!.source = "lexical";
             }
             return report;
           }),

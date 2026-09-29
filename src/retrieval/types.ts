@@ -3,17 +3,28 @@ import type { SemanticChunkRecord } from "../onboarding/types.js";
 import type { PublicationManifest } from "../publication/types.js";
 
 import type { RelevanceJudgment } from "./reranking/types.js";
+import type { ContextAnchor, DiscoverySignal } from "./discovery/types.js";
+import type { Relationship, RelationshipBasis } from "../inventory/structure/types.js";
 
 export interface SearchOptions {
   explain?: boolean;
   topK?: number;
   rerank?: boolean;
-  lexicalFallback?: boolean;
+  discovery?: "hybrid" | "semantic";
+  anchors?: readonly ContextAnchor[];
+  minRelevance?: number;
 }
 
 export interface SearchResult {
-  source?: "semantic" | "lexical-fallback";
+  source?: "semantic" | "lexical" | "hybrid" | "anchor";
+  discovery?: DiscoverySignal[];
   relevance?: RelevanceJudgment;
+  primaryRelevance?: RelevanceJudgment;
+  context?: {
+    relation: Relationship | "same-file";
+    basis?: RelationshipBasis;
+    record: Pick<SemanticChunkRecord, "id" | "resource">;
+  }[];
   rank: number;
   score: number;
   vectorId: string;
@@ -31,8 +42,38 @@ export interface SearchReport {
   root: string;
   query: string;
   reusedIntent: boolean;
+  evidence?: {
+    state: "supported" | "insufficient" | "not-assessed";
+    threshold?: number;
+    considered: number;
+  };
+  candidates?: SearchResult[];
   judgments?: { reused: number; new: number };
-  ranking: "vector" | "jev-relevance";
+  ranking: "vector" | "hybrid" | "jev-relevance";
+  execution?: "complete";
+  coverage?: {
+    scope: "active-publication";
+    exhaustive: false;
+    totalChunks: number;
+    discoveredPrimaryCandidates: number;
+    assessedPrimaryCandidates: number;
+    boundedChunks: number;
+    anchorMatches: number;
+    limitations: ("bounded-discovery" | "bounded-expansion" | "unstructured-sources")[];
+  };
+  truncation?: {
+    results: boolean;
+    omittedResults: number;
+    candidates: boolean;
+    omittedCandidates: number;
+  };
+  budget?: {
+    primaryCandidates: number;
+    contextCandidates: number;
+    contextChunksPerSeed: number;
+    contextBytesPerSeed: number;
+    seeds: number;
+  };
   intent?: QueryIntent;
   publication: Pick<
     PublicationManifest,

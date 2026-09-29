@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Context, Effect, Layer } from "effect";
 import { Errors } from "../errors/index.js";
 import { InventoryServiceTag, type InventoryService } from "../inventory/index.js";
+import { Messages, type MessageService } from "../messages/index.js";
 import { Taxonomy, type TaxonomyService } from "../taxonomy/governance.js";
 import { Jev, type JevService } from "../typesafe/client.js";
 import { ClassificationService } from "./classify.js";
@@ -15,6 +16,7 @@ export class OnboardingService {
     private readonly _inventory: InventoryService,
     private readonly _stores: StoreService,
     private readonly _taxonomy: TaxonomyService,
+    private readonly _messages: MessageService,
     jev: JevService,
   ) {
     this._classifier = new ClassificationService(jev);
@@ -47,6 +49,7 @@ export class OnboardingService {
             "Concurrency and limit must be positive integers",
           );
         mark("configuration");
+        yield* this._messages.activity("Onboarding: discovering resources");
         const inventory = yield* this._inventory.discover(root);
         mark("resource-discovery");
         const runId = randomUUID();
@@ -72,6 +75,7 @@ export class OnboardingService {
         };
         yield* store.write("index.json", manifest);
         mark("manifest-start-write");
+        yield* this._messages.activity("Onboarding: governing taxonomy");
         yield* store.receipt(
           { kind: "run", id: runId },
           {
@@ -83,6 +87,16 @@ export class OnboardingService {
         );
         const taxonomy = yield* this._taxonomy.govern(inventory, store, options.rerunGovernance);
         mark("taxonomy-governance");
+        const progress = yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            this._messages.progress({
+              label: "Onboarding chunks",
+              total: chunks.length,
+              payload: { stage: "classifying" },
+            }),
+          ),
+          (handle) => Effect.sync(() => handle.stop()),
+        );
         manifest.taxonomyVersion = taxonomy.version;
         for (const judgment of taxonomy.judgments)
           if (judgment.status === "failed")
@@ -110,6 +124,7 @@ export class OnboardingService {
                 });
                 if (reused) manifest.reused++;
                 else manifest.classified++;
+                progress.increment(1, { stage: reused ? "reused" : "classified" });
               } else {
                 const details = Errors.serialize(result.left);
                 manifest.failures.push({ subject: chunk.id, error: details.message, details });
@@ -117,11 +132,13 @@ export class OnboardingService {
                   { kind: "chunk", id: chunk.id },
                   { type: "classification-failed", error: details },
                 );
+                progress.increment(1, { stage: "failed" });
               }
             }),
           { concurrency, discard: true },
         );
         mark("chunk-classification");
+        yield* this._messages.activity("Onboarding: saving manifest");
         manifest.records.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
         manifest.state =
           manifest.failures.length || manifest.deferred.length ? "incomplete" : "complete";
@@ -153,6 +170,7 @@ export const OnboardingLive = Layer.effect(
       yield* InventoryServiceTag,
       yield* Stores,
       yield* Taxonomy,
+      yield* Messages,
       yield* Jev,
     );
   }),

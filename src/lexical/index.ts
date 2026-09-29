@@ -69,7 +69,7 @@ export class LexicalService {
       if (!index)
         return yield* Errors.fail(
           "NOT_FOUND",
-          "No lexical diagnostic index. Run `npm run cli -- index <root>` first. Semantic search is not implemented yet.",
+          "No lexical diagnostic index. Run `npm run cli -- index <root>` first. Hybrid search does not require this diagnostic index.",
         );
       if (index.version !== 1 || !Array.isArray(index.chunks))
         return yield* Errors.fail("INVALID_DATA", "Invalid lexical diagnostic index");

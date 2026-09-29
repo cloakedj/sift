@@ -1,6 +1,5 @@
 import { choice, score, type Questions, type SystemOneResult } from "@typesafe-ai/sdk";
 import { Errors } from "../errors/index.js";
-import { DIMENSIONS } from "../taxonomy/consts.js";
 import type { TaxonomySnapshot } from "../taxonomy/types.js";
 import {
   ANSWER_SHAPES,
@@ -107,13 +106,8 @@ export function buildIntent(
   if (intent.expectedAnswerShape) lines.push(`Answer: ${intent.expectedAnswerShape}`);
   if (intent.positiveTerms.length)
     lines.push(`Terms: ${[...intent.positiveTerms].sort().join(", ")}`);
-  for (const dimension of DIMENSIONS) {
-    const positive = intent.taxonomy[dimension]
-      .filter((label) => label.score > 0)
-      .sort((a, b) => a.labelId.localeCompare(b.labelId));
-    if (positive.length)
-      lines.push(`${dimension}: ${positive.map((label) => label.name).join(", ")}`);
-  }
+  // Keep taxonomy judgments for reranking, not indiscriminate query expansion.
+  // Nearly every label can receive nonzero probability, even when irrelevant.
   intent.embeddingDocument = lines.join("\n");
   return intent;
 }

@@ -10,7 +10,9 @@ export const USAGE = [
   "npm run cli -- evaluate-relevance <cases.json> --top-k <n> [--json]",
   "npm run cli -- benchmark-relevance <suite.json> --root <corpora-parent> --top-k <n> --policy answer-if-any|rerank-min-relevance --run-paid [--rerank --min-relevance <0..1>] [--json]",
   "npm run cli -- index [root] (legacy lexical diagnostic)",
-  "npm run cli -- search <query> [--explain] [--rerank] [--lexical-fallback] [--top-k <n>] [--root <path>] [--json]",
+  "npm run cli -- search <query> [--explain] [--rerank] [--semantic-only] [--anchor <literal>] [--top-k <n>] [--root <path>] [--json]",
+  "Search --top-k limits returned results. With --rerank, up to 8 candidates plus bounded supporting context are judged (n <= 8); this may increase paid judgments.",
+  "Reranked search withholds evidence below --min-relevance <0..1> (default 0.75, an uncalibrated policy). Use --explain for rejected candidates or --min-relevance 0 for diagnostic retrieval.",
   "npm run cli -- search <query> --show-intent [--root <path>] [--json]",
   "npm run cli -- lexical-search <query> [--root <path>] (legacy lexical diagnostic)",
 ];

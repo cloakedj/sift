@@ -1,3 +1,4 @@
+import type { ChunkStructure } from "./structure/types.js";
 import type { ErrorDetails } from "../errors/types.js";
 
 export interface DiscoveryPolicy {
@@ -17,6 +18,7 @@ export interface InventoryChunk {
   endByte: number; // Exclusive; byte ranges address original content, including CRLF.
   chunkHash: string;
   text: string;
+  structure?: ChunkStructure;
 }
 export interface InventoryResource {
   id: string;

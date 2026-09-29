@@ -7,7 +7,6 @@ import { runCli } from "./application.js";
 const [, , command, ...args] = process.argv;
 const output = new MessageService({ diagnosticsToStderr: args.includes("--json") });
 const program = runCli(command, args).pipe(
-  Effect.provide(LocalRuntimeLive),
-  Effect.provide(Layer.succeed(Messages, output)),
+  Effect.provide(Layer.merge(LocalRuntimeLive, Layer.succeed(Messages, output))),
 );
 void ApplicationRuntime.run(program, output);

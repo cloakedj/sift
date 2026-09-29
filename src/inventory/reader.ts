@@ -5,15 +5,25 @@ import { pathToFileURL } from "node:url";
 import { Effect, Stream } from "effect";
 import { Errors } from "../errors/index.js";
 import { hash } from "../shared/utils.js";
-import { CHUNKER_VERSION, MAX_CHUNK_BYTES, MAX_CHUNK_LINES, OVERLAP_LINES } from "./consts.js";
+import {
+  CHUNKER_VERSION,
+  MAX_CHUNK_BYTES,
+  MAX_CHUNK_LINES,
+  OVERLAP_LINES,
+  MAX_STRUCTURE_BYTES,
+} from "./consts.js";
 import type { InventoryChunk, Unit } from "./types.js";
+import { SyntaxChunker } from "./syntax/index.js";
+import { SYNTAX_EXTENSIONS } from "./syntax/consts.js";
+import { DocumentChunker } from "./document/index.js";
 
 export class ResourceReader {
   private readonly _id: string;
   private readonly _uri: string;
   private readonly _digest = createHash("sha256");
   private readonly _decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
-  private readonly _chunks: InventoryChunk[] = [];
+  private _chunks: InventoryChunk[] = [];
+  private _source: Buffer[] | undefined;
   private readonly _document: boolean;
   private _window: Unit[] = [];
   private _pending = Buffer.alloc(0);
@@ -29,6 +39,7 @@ export class ResourceReader {
     this._uri = pathToFileURL(_file).href;
     this._id = hash(this._uri);
     this._document = [".md", ".markdown", ".txt", ".rst"].includes(extname(_file).toLowerCase());
+    if (this._document || SYNTAX_EXTENSIONS.has(extname(_file).toLowerCase())) this._source = [];
   }
   /**
    * Stream the source into validated chunks and release the stream on completion or failure.
@@ -56,6 +67,15 @@ export class ResourceReader {
           () => {
             if (this._pending.length) this._accept(this._pending);
             this._emit();
+            if (this._source) {
+              const chunker = this._document ? new DocumentChunker() : new SyntaxChunker();
+              const chunks = chunker.chunk(
+                Buffer.concat(this._source).toString("utf8"),
+                this._path,
+                this._id,
+              );
+              if (chunks) this._chunks = chunks;
+            }
           },
           "IO",
           { path: this._path },
@@ -93,6 +113,7 @@ export class ResourceReader {
       endByte: last.end,
       chunkHash,
       text,
+      structure: { mode: "bounded", references: [], related: [] },
     });
     this._lastEmittedEnd = last.end;
   }
@@ -134,6 +155,8 @@ export class ResourceReader {
   private _consume(buffer: Buffer): void {
     this._digest.update(buffer);
     this._bytes += buffer.length;
+    if (this._bytes > MAX_STRUCTURE_BYTES) this._source = undefined;
+    this._source?.push(buffer);
     if (buffer.some((byte) => byte < 32 && ![9, 10, 12, 13].includes(byte)))
       Errors.raise("BINARY_RESOURCE", "binary control bytes");
     this._pending = Buffer.concat([this._pending, buffer]);

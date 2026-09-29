@@ -185,6 +185,41 @@ test("reranking judges full current source, reorders tied vectors, and fails clo
     await assert.rejects(rank(), /Invalid stored data/);
     await rm(cachePath);
     await rank();
+    const withContext = [
+      { ...ranked[1]!, context: [{ relation: "reference" as const, record: ranked[0]!.record }] },
+    ];
+    const contextual = await rank(
+      {
+        ...transport,
+        async evaluate(request) {
+          const state = request.state as { candidate: { context: { text: string }[] } };
+          assert.equal(state.candidate.context[0]!.text, longText);
+          return transport.evaluate(request);
+        },
+      },
+      withContext,
+    );
+    assert.notEqual(
+      contextual.results[0]!.relevance!.fingerprint,
+      ranked[1]!.relevance!.fingerprint,
+    );
+    await assert.rejects(
+      rank(transport, [
+        {
+          ...ranked[1]!,
+          context: [
+            {
+              relation: "reference",
+              record: {
+                ...ranked[0]!.record,
+                resource: { ...ranked[0]!.record.resource, resourceHash: "stale" },
+              },
+            },
+          ],
+        },
+      ]),
+      /Supporting source changed/,
+    );
     await writeFile(join(root, "restore.ts"), "changed();\n");
     await assert.rejects(rank(), /source changed/);
     await onboard(root, fakeJev().client);

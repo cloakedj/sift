@@ -3,6 +3,7 @@ import { BenchmarkLive } from "../benchmark/index.js";
 import { FileSystemLive } from "../filesystem/index.js";
 import { InventoryLive } from "../inventory/index.js";
 import { LexicalLive } from "../lexical/index.js";
+import { MessagesLive } from "../messages/index.js";
 import { InspectionLive } from "../onboarding/inspect.js";
 import { StoresLive } from "../onboarding/store.js";
 
@@ -10,6 +11,9 @@ const persistence = Layer.mergeAll(InventoryLive, StoresLive).pipe(
   Layer.provideMerge(FileSystemLive),
 );
 // No provider configuration or paid calls are acquired by credential-free commands.
-export const LocalRuntimeLive = Layer.mergeAll(BenchmarkLive, InspectionLive, LexicalLive).pipe(
-  Layer.provideMerge(persistence),
-);
+export const LocalRuntimeLive = Layer.mergeAll(
+  BenchmarkLive,
+  InspectionLive,
+  LexicalLive,
+  MessagesLive,
+).pipe(Layer.provideMerge(persistence));

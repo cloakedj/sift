@@ -49,8 +49,11 @@ for (const scope of ["code", "text", "mixed"])
       assert.equal(inspected.complete, true);
       for (const record of inspected.records) {
         assert.equal(record.embeddingDocument, embeddingDocument(record));
-        assert.match(record.embeddingDocument, /Projection: semantic-projection-v2/u);
-        assert.match(record.embeddingDocument, /Content preview:/u);
+        assert.equal(record.provenance.projectionVersion, "semantic-projection-v4");
+        assert.ok(!record.embeddingDocument.includes(record.resource.uri));
+        assert.ok(
+          record.embeddingDocument.includes(record.resource.textPreview.trim().split("\n")[0]!),
+        );
         assert.ok(Buffer.byteLength(record.embeddingDocument, "utf8") <= 500);
         assert.equal(record.provenance.model, client.model);
         assert.ok(record.resource.uri.startsWith("file:"));
@@ -222,7 +225,7 @@ test("projection-only changes reuse classification and repair the deterministic 
     const calls = fake.calls.length;
     const repaired = await repairProjections(root);
     assert.equal(repaired.repaired, 1);
-    assert.equal(repaired.projectionVersion, "semantic-projection-v2");
+    assert.equal(repaired.projectionVersion, "semantic-projection-v4");
     assert.equal(fake.calls.length, calls);
     assert.notEqual(JSON.parse(await readFile(path, "utf8")).embeddingDocument, "old projection");
     const unchanged = await repairProjections(root);

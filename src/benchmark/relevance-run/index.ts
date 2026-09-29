@@ -70,8 +70,10 @@ export class RelevanceRunService {
             const search = yield* this._retrieval.search(corpusRoot, item.query, {
               topK: options.topK,
               rerank: options.rerank,
+              // Evaluation applies its own explicit answer policy to the unfiltered shortlist.
+              minRelevance: options.rerank ? 0 : undefined,
               explain: true,
-              lexicalFallback: false,
+              discovery: "semantic",
             });
             if (
               search.root !== corpusRoot ||
@@ -79,7 +81,9 @@ export class RelevanceRunService {
               search.ranking !== (options.rerank ? "jev-relevance" : "vector") ||
               search.results.length > options.topK ||
               search.results.some(
-                (result) => !allowed.has(result.record.id) || result.source === "lexical-fallback",
+                (result) =>
+                  !allowed.has(result.record.id) ||
+                  (result.source !== undefined && result.source !== "semantic"),
               )
             )
               return yield* Errors.fail(

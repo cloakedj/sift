@@ -8,8 +8,8 @@ const codeBlock = (file: number, chunk: number) => `export function scaleCase${f
   const queueName = "semantic checkpoint ${chunk}";
   const retryPolicy = "bounded exponential backoff";
   return { queueName, retryPolicy, owner: "operations" };
-}
-${"// Deterministic scale workload.\n".repeat(MAX_CHUNK_LINES - OVERLAP_LINES - 5)}`;
+${"  // Deterministic scale workload.\n".repeat(MAX_CHUNK_LINES - OVERLAP_LINES - 5)}}
+`;
 
 const textBlock = (file: number, chunk: number) => `Scale handbook ${file}.${chunk}
 The semantic search checkpoint explains how operations teams diagnose retry policy,

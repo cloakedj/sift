@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { Context, Effect, Layer } from "effect";
 import { Errors } from "../errors/index.js";
 import { FileSystem, type FileSystemService } from "../filesystem/index.js";
+import { Messages, type MessageService } from "../messages/index.js";
 import { StoreService } from "../onboarding/store.js";
 import { Inspection, type InspectionService } from "../onboarding/inspect.js";
 import {
@@ -33,6 +34,7 @@ export class PublicationService {
   public constructor(
     private readonly _fs: FileSystemService,
     private readonly _inspection: InspectionService,
+    private readonly _messages: MessageService,
   ) {}
 
   /**
@@ -43,6 +45,7 @@ export class PublicationService {
   public publish(root: string) {
     return Effect.scoped(
       Effect.gen(this, function* () {
+        yield* this._messages.activity("Publication: authenticating and inspecting records");
         const config = yield* new CloudflareAuthService().config();
         const client = new CloudflarePublicationClient(config);
         const runId = randomUUID();
@@ -123,11 +126,23 @@ export class PublicationService {
           ];
         }
         yield* store.write(PUBLICATION_FILE, publication);
+        yield* this._messages.activity("Publication: verifying index");
         const outcome = yield* Effect.either(
           Effect.gen(this, function* () {
             yield* client.verifyIndex();
+            const progress = yield* Effect.acquireRelease(
+              Effect.sync(() =>
+                this._messages.progress({
+                  label: "Publication vectors",
+                  total: records.length,
+                  payload: { stage: "embedding and submitting" },
+                }),
+              ),
+              (handle) => Effect.sync(() => handle.stop()),
+            );
             const allVectors: EmbeddingVector[] = [];
             for (let offset = 0; offset < records.length; offset += EMBEDDING_BATCH_SIZE) {
+              progress.update(offset, { stage: "embedding/loading cached batch" });
               const batch = records.slice(offset, offset + EMBEDDING_BATCH_SIZE);
               const cachePath = `publication-${fingerprint}-${offset}.json`;
               const cached = yield* store.read<{ fingerprint: string; vectors: number[][] }>(
@@ -167,6 +182,7 @@ export class PublicationService {
                 };
               });
               allVectors.push(...payload);
+              progress.update(offset, { stage: "checking/submitting batch" });
               const remote = new Map(
                 (yield* client.getVectors(payload.map((vector) => vector.id))).map((vector) => [
                   vector.id,
@@ -183,14 +199,21 @@ export class PublicationService {
                 ];
                 yield* store.write(PUBLICATION_FILE, publication);
               }
+              progress.update(offset + batch.length, { stage: "submitted or already present" });
             }
             publication.state = "pending";
             yield* store.write(PUBLICATION_FILE, publication);
             for (let attempt = 0; attempt < VISIBILITY_POLL_ROUNDS; attempt++) {
+              yield* this._messages.activity(
+                `Publication: checking visibility (round ${attempt + 1}/${VISIBILITY_POLL_ROUNDS})`,
+              );
               publication.visible = [];
               for (const vector of allVectors)
                 if (yield* client.visible(vector)) publication.visible.push(vector.id);
               yield* store.write(PUBLICATION_FILE, publication);
+              yield* this._messages.activity(
+                `Publication: ${publication.visible.length}/${publication.expected} visible; reconciling or waiting for indexing`,
+              );
               if (publication.visible.length === publication.expected) {
                 const ids = [
                   ...new Set([
@@ -225,6 +248,7 @@ export class PublicationService {
                   `${Math.min(VISIBILITY_MAX_DELAY_SECONDS, 2 ** attempt)} seconds`,
                 );
             }
+            yield* this._messages.activity("Publication: checking final source currency");
             const current = yield* this._inspection.records(root);
             if (
               !current.complete ||
@@ -303,7 +327,7 @@ export class Publication extends Context.Tag("Publication")<Publication, Publica
 export const PublicationLive = Layer.effect(
   Publication,
   Effect.gen(function* () {
-    return new PublicationService(yield* FileSystem, yield* Inspection);
+    return new PublicationService(yield* FileSystem, yield* Inspection, yield* Messages);
   }),
 );
 export const publishVectors = (root: string) =>
