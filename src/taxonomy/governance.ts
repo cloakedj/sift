@@ -231,10 +231,17 @@ class GovernanceRun {
 export class TaxonomyService {
   public constructor(private readonly _jev: JevService) {}
   public govern(inventory: Inventory, store: LocalStore, rerun = false, activity?: ActivityHandle) {
-    return Errors.attempt(
-      () => new GovernanceRun(inventory, this._jev, store, activity),
-      "INVALID_DATA",
-    ).pipe(Effect.flatMap((run) => run.run(rerun)));
+    return Effect.gen(this, function* () {
+      activity?.update(
+        `Onboarding: harvesting taxonomy candidates from ${inventory.resources.length} resources`,
+      );
+      yield* Effect.yieldNow();
+      const run = yield* Errors.attempt(
+        () => new GovernanceRun(inventory, this._jev, store, activity),
+        "INVALID_DATA",
+      );
+      return yield* run.run(rerun);
+    });
   }
 }
 export class Taxonomy extends Context.Tag("Taxonomy")<Taxonomy, TaxonomyService>() {}

@@ -8,7 +8,7 @@ import {
   compareText,
   identifierForms,
   normalizeLabel,
-  resourceText,
+  resourceTexts,
   selectCandidates,
 } from "./utils.js";
 
@@ -123,8 +123,9 @@ export function harvestCandidates(
   const map = new Map<string, Candidate>();
   const excluded: Harvest["excluded"] = [];
   const warnings: Harvest["warnings"] = [];
+  const texts = resourceTexts(inventory);
   for (const resource of inventory.resources) {
-    const text = resourceText(inventory, resource);
+    const text = texts.get(resource.id) ?? "";
     const add = (value: string, source: CandidateSource, start?: number, end?: number) => {
       const name = normalizeLabel(value);
       if (!name || !/\p{L}/u.test(name)) return;
@@ -213,13 +214,27 @@ export function harvestCandidates(
     }
   }
   const candidates = [...map.values()].sort((a, b) => compareText(a.name, b.name));
-  const frequency = (c: Candidate) => new Set(c.evidence.map((e) => e.resourceId)).size;
+  const frequencies = new Map(
+    candidates.map((candidate) => [
+      candidate.id,
+      new Set(candidate.evidence.map((e) => e.resourceId)).size,
+    ]),
+  );
+  const byResourceSource = new Map<string, Candidate[]>();
+  for (const candidate of candidates)
+    for (const evidence of candidate.evidence) {
+      const key = `${evidence.resourceId}\0${evidence.source}`;
+      const pool = byResourceSource.get(key) ?? [];
+      pool.push(candidate);
+      byResourceSource.set(key, pool);
+    }
   const eligible = new Set<string>();
   for (const resource of inventory.resources)
     for (const source of SOURCE_PRIORITY) {
-      const pool = candidates
-        .filter((c) => c.evidence.some((e) => e.resourceId === resource.id && e.source === source))
-        .sort((a, b) => frequency(b) - frequency(a) || compareText(a.name, b.name));
+      const pool = byResourceSource.get(`${resource.id}\0${source}`) ?? [];
+      pool.sort(
+        (a, b) => frequencies.get(b.id)! - frequencies.get(a.id)! || compareText(a.name, b.name),
+      );
       for (const candidate of pool.slice(0, config.perResource[source])) eligible.add(candidate.id);
     }
   const selected = selectCandidates(
