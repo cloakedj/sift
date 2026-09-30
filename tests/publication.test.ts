@@ -185,7 +185,7 @@ test("status never activates an unverified publication or mistakes acceptance fo
 });
 
 test("publication resumes cached embeddings after failed upsert and requires query visibility; stale sources deactivate status", async () => {
-  const root = await mkdtemp(join(tmpdir(), "jev-publication-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-publication-"));
   const originalFetch = globalThis.fetch;
   const keys = [
     "CLOUDFLARE_ACCOUNT_ID",
@@ -216,8 +216,8 @@ test("publication resumes cached embeddings after failed upsert and requires que
     await writeFile(join(root, "sample.txt"), "Tiny example document.");
     await onboard(root, fakeJev().client);
     // Controlled short projections isolate publication mechanics from Jev quality.
-    for (const file of await readdir(join(root, ".jev", "records"))) {
-      const path = join(root, ".jev", "records", file);
+    for (const file of await readdir(join(root, ".sift", "records"))) {
+      const path = join(root, ".sift", "records", file);
       const record = JSON.parse(await readFile(path, "utf8"));
       record.embeddingDocument = "Tiny embedding input";
       await writeFile(path, JSON.stringify(record));

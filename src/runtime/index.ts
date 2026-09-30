@@ -1,5 +1,6 @@
 import { Layer } from "effect";
 import { BenchmarkLive } from "../benchmark/index.js";
+import { ConfigurationLive } from "../configuration/index.js";
 import { FileSystemLive } from "../filesystem/index.js";
 import { InventoryLive } from "../inventory/index.js";
 import { LexicalLive } from "../lexical/index.js";
@@ -8,6 +9,7 @@ import { InspectionLive } from "../onboarding/inspect.js";
 import { StoresLive } from "../onboarding/store.js";
 
 const persistence = Layer.mergeAll(InventoryLive, StoresLive).pipe(
+  Layer.provideMerge(ConfigurationLive),
   Layer.provideMerge(FileSystemLive),
 );
 // No provider configuration or paid calls are acquired by credential-free commands.

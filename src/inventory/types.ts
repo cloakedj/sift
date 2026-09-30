@@ -1,3 +1,4 @@
+import type { ResolvedConfig } from "../configuration/types.js";
 import type { ChunkStructure } from "./structure/types.js";
 import type { ErrorDetails } from "../errors/types.js";
 
@@ -35,6 +36,7 @@ export interface Unit {
   line: number;
 }
 export interface Inventory {
+  configuration?: ResolvedConfig;
   schemaVersion: number;
   mode: string;
   root: string;

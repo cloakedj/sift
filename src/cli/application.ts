@@ -8,10 +8,12 @@ import {
 import type { ScaleCorpusKind } from "../benchmark/types.js";
 import { runRelevanceSuite } from "../benchmark/relevance-run/index.js";
 import { Errors } from "../errors/index.js";
+import { ConfigurationPath } from "../configuration/index.js";
 import { discoverInventory } from "../inventory/index.js";
 import { inferQuery, IntentLive } from "../intent/index.js";
 import { Lexical } from "../lexical/index.js";
 import { Messages, type MessageService } from "../messages/index.js";
+import { agentSearchReport } from "../messages/search/utils.js";
 import { onboard, OnboardingLive } from "../onboarding/index.js";
 import {
   inspectRecords,
@@ -24,11 +26,20 @@ import { searchSemantic, RetrievalLive } from "../retrieval/index.js";
 import { TaxonomyLive } from "../taxonomy/governance.js";
 import { JevLive } from "../typesafe/client.js";
 import { COMMON_OPTIONS, USAGE } from "./consts.js";
-import { positiveInteger, selectRoot } from "./utils.js";
+import { configurationArgs, positiveInteger, selectRoot } from "./utils.js";
 
 export class CliApplication {
   public constructor(private readonly _output: MessageService) {}
   public run(command: string | undefined, args: string[]) {
+    return Effect.gen(this, function* () {
+      const parsed = yield* Errors.attempt(() => configurationArgs(args), "INVALID_ARGUMENT");
+      return yield* this._run(command, parsed.args).pipe(
+        Effect.provideService(ConfigurationPath, parsed.config),
+      );
+    });
+  }
+
+  private _run(command: string | undefined, args: string[]) {
     return Effect.gen(this, function* () {
       if (command === "onboard") return yield* this._onboard(args);
       if (command === "inspect") return yield* this._inspect(args);
@@ -62,7 +73,9 @@ export class CliApplication {
               ...COMMON_OPTIONS,
               "dry-run": { type: "boolean" },
               limit: { type: "string" },
+              concurrency: { type: "string" },
               "rerun-governance": { type: "boolean" },
+              "no-rerun-governance": { type: "boolean" },
             },
           }),
         "INVALID_ARGUMENT",
@@ -71,11 +84,18 @@ export class CliApplication {
         () => selectRoot(positionals, values.root),
         "INVALID_ARGUMENT",
       );
+      if (values["rerun-governance"] && values["no-rerun-governance"])
+        return yield* Errors.fail("INVALID_ARGUMENT", "Choose only one governance override");
       if (values["dry-run"]) {
-        if (values.limit || values["rerun-governance"])
+        if (
+          values.limit ||
+          values.concurrency ||
+          values["rerun-governance"] ||
+          values["no-rerun-governance"]
+        )
           return yield* Errors.fail(
             "INVALID_ARGUMENT",
-            "--limit and --rerun-governance apply to semantic onboarding, not discovery",
+            "Classification and governance flags apply to semantic onboarding, not discovery",
           );
         const inventory = yield* discoverInventory(root);
         if (values.json) yield* this._output.json(inventory);
@@ -123,7 +143,14 @@ export class CliApplication {
           : yield* Errors.attempt(() => positiveInteger(values.limit, 1), "INVALID_ARGUMENT");
       const result = yield* onboard(root, {
         limit,
-        rerunGovernance: values["rerun-governance"],
+        concurrency:
+          values.concurrency === undefined
+            ? undefined
+            : yield* Errors.attempt(
+                () => positiveInteger(values.concurrency, 1),
+                "INVALID_ARGUMENT",
+              ),
+        rerunGovernance: values["no-rerun-governance"] ? false : values["rerun-governance"],
       }).pipe(
         Effect.provide(OnboardingLive),
         Effect.provide(TaxonomyLive),
@@ -201,6 +228,7 @@ export class CliApplication {
             options: {
               ...COMMON_OPTIONS,
               "show-intent": { type: "boolean" },
+              agent: { type: "boolean" },
               "min-relevance": { type: "string" },
               explain: { type: "boolean" },
               rerank: { type: "boolean" },
@@ -211,6 +239,11 @@ export class CliApplication {
           }),
         "INVALID_ARGUMENT",
       );
+      if (values.agent && (!values.json || values["show-intent"]))
+        return yield* Errors.fail(
+          "INVALID_ARGUMENT",
+          "--agent requires --json and retrieval, not --show-intent",
+        );
       if (
         values["show-intent"] &&
         (values.explain ||
@@ -254,7 +287,12 @@ export class CliApplication {
               );
         }),
       );
-      if (values.json) yield* this._output.json(result);
+      if (values.json)
+        yield* this._output.json(
+          values.agent && "results" in result
+            ? yield* Errors.attempt(() => agentSearchReport(result), "INVALID_DATA")
+            : result,
+        );
       else if ("results" in result && !values.explain) {
         for (const match of result.results) {
           yield* this._output.report({

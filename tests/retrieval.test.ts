@@ -53,7 +53,7 @@ const intentClient: JevClient = {
 };
 
 test("semantic search returns source-linked active publication matches from cached intent", async () => {
-  const root = await mkdtemp(join(tmpdir(), "jev-retrieval-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-retrieval-"));
   const originalFetch = globalThis.fetch;
   const keys = [
     "CLOUDFLARE_ACCOUNT_ID",
@@ -77,8 +77,8 @@ test("semantic search returns source-linked active publication matches from cach
     await writeFile(join(root, "sample.txt"), "Tiny retrieval example.");
     await writeFile(join(root, "answer.txt"), "Tiny retrieval example.\n\n");
     await onboard(root, fakeJev().client);
-    for (const file of await readdir(join(root, ".jev", "records"))) {
-      const path = join(root, ".jev", "records", file);
+    for (const file of await readdir(join(root, ".sift", "records"))) {
+      const path = join(root, ".sift", "records", file);
       const record = JSON.parse(await readFile(path, "utf8"));
       record.embeddingDocument = "Tiny record embedding input";
       await writeFile(path, JSON.stringify(record));
@@ -252,8 +252,8 @@ test("semantic search returns source-linked active publication matches from cach
       /nonempty/,
     );
     assert.equal((await search({ explain: true })).judgments, undefined);
-    for (const file of await readdir(join(root, ".jev", "reranking"))) {
-      const path = join(root, ".jev", "reranking", file);
+    for (const file of await readdir(join(root, ".sift", "reranking"))) {
+      const path = join(root, ".sift", "reranking", file);
       const cached = JSON.parse(await readFile(path, "utf8"));
       cached.response.answers.relevance = {
         type: "score",
@@ -298,7 +298,7 @@ test("semantic search returns source-linked active publication matches from cach
     process.env.CLOUDFLARE_VECTORIZE_INDEX = "other-index";
     await assert.rejects(search(), /does not match the active publication/);
     process.env.CLOUDFLARE_VECTORIZE_INDEX = config.vectorizeIndex;
-    const publicationPath = join(root, ".jev", "publication.json");
+    const publicationPath = join(root, ".sift", "publication.json");
     const publicationText = await readFile(publicationPath, "utf8");
     const publication = JSON.parse(publicationText);
     publication.embeddingSpaceId = "incompatible";

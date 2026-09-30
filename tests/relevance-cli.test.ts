@@ -23,7 +23,7 @@ function run(args: string[]) {
 }
 
 test("relevance CLI evaluates labeled JSON without credentials, external commands, or writes", async () => {
-  const root = await mkdtemp(join(tmpdir(), "jev-relevance-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-relevance-"));
   try {
     const path = join(root, "cases.json");
     const content = JSON.stringify([
@@ -62,7 +62,7 @@ test("relevance CLI evaluates labeled JSON without credentials, external command
 });
 
 test("relevance CLI rejects missing files, malformed JSON, and invalid labels without stdout", async () => {
-  const root = await mkdtemp(join(tmpdir(), "jev-relevance-invalid-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-relevance-invalid-"));
   try {
     const path = join(root, "cases.json");
     const missing = run([path, "--top-k", "2", "--json"]);

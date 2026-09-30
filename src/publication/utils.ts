@@ -124,7 +124,7 @@ export const stateDirectory = (fs: FileSystemService, root: string) =>
     const info = yield* fs.stat(path);
     if (info.isSymbolicLink())
       return yield* Errors.fail("UNSAFE_PATH", "Publication root cannot be a symlink", { path });
-    return join(info.isDirectory() ? path : dirname(path), ".jev");
+    return join(info.isDirectory() ? path : dirname(path), ".sift");
   });
 
 export const summarizeStatus = (

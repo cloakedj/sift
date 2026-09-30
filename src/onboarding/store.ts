@@ -65,7 +65,7 @@ export class StoreService {
       const info = yield* this._fs.stat(path);
       if (info.isSymbolicLink())
         return yield* Errors.fail("UNSAFE_PATH", "Onboarding root cannot be a symlink", { path });
-      return join(info.isDirectory() ? path : dirname(path), ".jev");
+      return join(info.isDirectory() ? path : dirname(path), ".sift");
     });
   }
   /**

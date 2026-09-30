@@ -9,7 +9,7 @@ import { HARVEST_CONFIG } from "../src/taxonomy/consts.js";
 import { identifierForms, normalizeLabel } from "../src/taxonomy/utils.js";
 
 async function temporary(run: (root: string) => Promise<void>) {
-  const root = await mkdtemp(join(tmpdir(), "jev-taxonomy-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-taxonomy-"));
   try {
     await run(root);
   } finally {

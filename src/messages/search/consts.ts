@@ -1,0 +1,1 @@
+export const AGENT_PREVIEW_CHARACTERS = 1200;

@@ -4,4 +4,6 @@ dist/
 .env.*
 !.env.example
 .DS_Store
+.sift/
+# Legacy local state must never be committed.
 .jev/

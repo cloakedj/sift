@@ -9,7 +9,7 @@ import { fakeJev } from "./support/jev.js";
 
 test("central errors preserve identity, typed codes and safe serialization", () => {
   const error = Errors.create("STORE_LOCKED", "Another run owns the lock", {
-    path: "/fixture/.jev/onboarding.lock",
+    path: "/fixture/.sift/onboarding.lock",
   });
   assert.ok(error instanceof AppError);
   assert.equal(Errors.normalize(error), error);
@@ -18,7 +18,7 @@ test("central errors preserve identity, typed codes and safe serialization", () 
     code: "STORE_LOCKED",
     reason: "Another run owns the lock",
     message: "Another run owns the lock",
-    metadata: { path: "/fixture/.jev/onboarding.lock" },
+    metadata: { path: "/fixture/.sift/onboarding.lock" },
     retryable: false,
   });
   const normalized = Errors.normalize(

@@ -21,6 +21,8 @@
     "@typesafe-ai/sdk": "latest",
     "cli-progress": "^3.12.0",
     "effect": "latest",
+    "ignore": "^7.0.11",
+    "minimatch": "^10.2.6",
     "ora": "^9.4.1",
     "typescript-ast": "npm:typescript@5.9.3"
   },

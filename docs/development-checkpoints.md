@@ -1,5 +1,11 @@
 # Development checkpoint progress
 
+## Repository configuration and Sift naming — credential-free mechanics
+
+`onboard` now automatically reads `sift.config.json` at the selected root. Shared discovery applies include/exclude globs, optional root/nested `.gitignore` rules, and safety defaults across onboarding and later source-current checks. CLI/programmatic onboarding options override config defaults. `--config` supports explicit config selection across corpus commands. See [configuration](configuration.md) for the contract and migration steps.
+
+Local state is now `.sift/`, and the repository retrieval skill is named `sift`. Existing local stores in this checkout were renamed without modifying their contents. State paths below use the current name; historical provider model names, remote index names, and temporary evidence paths are unchanged. No new real-service semantic checkpoint is claimed for configuration or this rename.
+
 ## Resource discovery and chunk inventory — passed
 
 `onboard --dry-run` inventories resources without creating semantic records, inferring taxonomy, embedding content, or publishing vectors. `index` and `lexical-search` are legacy lexical diagnostics, not semantic checkpoint evidence (`search` now exposes the query-intent checkpoint below).
@@ -22,7 +28,7 @@ Mixed fixture output: two resources and three chunks. JSON includes resources, s
 ### Implemented contract
 
 - Discover one file or recursively traverse a directory in sorted order; do not follow symlinks.
-- Apply the source-configurable policy in `src/inventory/consts.ts` before reading content. Defaults deny hidden directories, dependencies/build outputs, `.jev`, common credential files, private keys, and known binary extensions. Policy sets and patterns can be replaced or extended; no configuration-file syntax is introduced yet.
+- Apply the source-configurable policy in `src/inventory/consts.ts` before reading content. Defaults deny hidden directories, dependencies/build outputs, `.sift` (and legacy state), common credential files, private keys, and known binary extensions. Source policy sets and patterns can be replaced or extended. Repository configuration now adds file-selection rules; see the configuration checkpoint above.
 - Stream input, including files over 2 MB. Accept UTF-8 text; reject invalid UTF-8 and binary control bytes, discarding all proposed chunks even when detection happens late. Empty files are resources with no chunks.
 - Bound chunks to 8,192 bytes and 48 lines. Markdown/plain-text/RST documents prefer paragraph and Markdown heading boundaries; other text uses line windows with up to eight overlapping lines. Long lines split on UTF-8 boundaries. Byte ranges are half-open and preserve original line endings; line ranges are inclusive and one-based.
 - Resource identity hashes the absolute file URI. Chunk identity hashes resource identity, chunker version, byte range, and content hash. Repeated unchanged scans at the same location are deterministic. Moving the root intentionally changes identity; no relocation guarantee is made.
@@ -52,7 +58,7 @@ The input reader is streaming, but the returned inventory (including chunk text)
 - Effect manages provider timeouts and bounded exponential retries; SDK retries are disabled to avoid nested retry loops. Permanent HTTP errors do not retry. SIGINT/SIGTERM interrupt the root effect; forced termination still needs manual stale-lock recovery.
 - Validation: **28 tests passed**, plus typecheck and build. New tests cover structured-error redaction/reporting, transient/permanent retries, cancellation, cleanup after partial writes, lock ownership, and lightweight coding-standard guardrails. All three existing real-service fixture caches survived the refactor: 8 records reused, zero classifications, and no run failures. This cache check is not a new real-inference quality measurement.
 
-The legacy lexical diagnostic now uses `.jev/lexical-index.json` so it cannot overwrite semantic state. Rebuild old diagnostic indexes with `index`; no semantic search behavior is claimed yet.
+The legacy lexical diagnostic now uses `.sift/lexical-index.json` so it cannot overwrite semantic state. Rebuild old diagnostic indexes with `index`; no semantic search behavior is claimed yet.
 
 ## Jev semantic records — passed on small fixtures
 
@@ -73,7 +79,7 @@ Non-dry-run onboarding sends permitted content to TypeSafe and incurs inference 
 
 - Harvest language-light candidates globally, independently govern each proposed label/dimension, then classify each chunk against the resulting snapshot. Pending, unsuitable, failed, overflow, and promoted outcomes remain distinct and inspectable.
 - Candidate caps, rare-label reservation, independent-choice governance, confidence threshold, and serialized request guards follow the approved initial policy. Tuning defaults remain uncalibrated. Conservative YAML front matter supports the selected string/string-list fields; unsupported syntax warns rather than excluding the resource.
-- Persist `.jev/index.json`, `.jev/taxonomy.json`, `.jev/records/<chunk-id>.json`, and append-only `.jev/receipts/<run-id>.jsonl`. Files publish by atomic rename; a single-writer lock protects each state directory. An interrupted run may require removing its lock after verifying the process is no longer running; completed records/judgments are reused on the next run.
+- Persist `.sift/index.json`, `.sift/taxonomy.json`, `.sift/records/<chunk-id>.json`, and append-only `.sift/receipts/<run-id>.jsonl`. Files publish by atomic rename; a single-writer lock protects each state directory. An interrupted run may require removing its lock after verifying the process is no longer running; completed records/judgments are reused on the next run.
 - Classification fingerprints cover the full request (content and supplied resource context, questions, pinned model) plus taxonomy snapshot and question-set version. Projection-only changes recompute the embedding document without inference. Successful response model, answer types, scores, confidence, and probability distributions are validated.
 - Records carry source URI, original byte/line ranges, source/chunk hashes, Jev label scores, deterministic embedding documents, model/version provenance, and receipt references. Successful records remain available in a visibly incomplete run; failures are never replaced with lexical results.
 - Changed/deleted source is excluded from current `inspect records` output. Historical record files/receipts are retained, not silently treated as current. Inspection never performs inference or mutates records.
@@ -90,7 +96,7 @@ Actual product commands against Jev `jev-1.13.0` completed for all three fixture
 | Text | 4 | 49 | 0 | 4 reused, 0 classified |
 | Mixed | 3 | 76 | 6 | 3 reused, 0 classified |
 
-Rerun receipts contain only start/reuse/finish actions: no new governance or classification. Raw local proof artifacts live in each fixture's ignored `.jev/` directory. Counts are observed outcomes, not assertions of repeatable model outputs or retrieval relevance.
+Rerun receipts contain only start/reuse/finish actions: no new governance or classification. Raw local proof artifacts live in each fixture's ignored `.sift/` directory. Counts are observed outcomes, not assertions of repeatable model outputs or retrieval relevance.
 
 **Quality finding:** the text fixture promoted no discovered taxonomy labels at the approved 0.8 threshold; its records have Jev resource-kind judgments but empty label arrays. Do not treat successful persistence as proof of useful semantic retrieval. The next taxonomy/classification checkpoint must inspect candidate quality, pending judgments, and classification usefulness before any calibration change.
 
@@ -124,7 +130,7 @@ npm run --silent cli -- search 'find bounded retries without permanent rejection
 
 - `src/intent` extracts at most 24 unique unigram/bigram candidates from a query bounded to 2,048 UTF-8 bytes. Jev chooses intent kind, optional answer shape, phrase roles, and independent positive taxonomy scores. Requests are capped at 32 KiB; oversized registries fail explicitly rather than silently dropping labels.
 - Negative signals are soft preferences, not filters. Unmatched candidates remain available for future enrichment without mutating the taxonomy. Embedding documents include raw query, kind, optional shape, positive terms, and positive taxonomy scores in stable order. Negative fields are not appended as positive targets; the original query can itself contain negation.
-- Cache entries under `.jev/intent/` are atomic, separate from semantic records and receipts, and keyed by exact raw query, registry version, pinned model, question-set version, and the full request. Cached structured answers are validated against current questions before reconstructing intent. Invalid structured answers require fresh inference; malformed JSON fails explicitly. Cache hits acquire no provider credentials. Query caches contain raw query-derived terms and should be treated as local sensitive state.
+- Cache entries under `.sift/intent/` are atomic, separate from semantic records and receipts, and keyed by exact raw query, registry version, pinned model, question-set version, and the full request. Cached structured answers are validated against current questions before reconstructing intent. Invalid structured answers require fresh inference; malformed JSON fails explicitly. Cache hits acquire no provider credentials. Query caches contain raw query-derived terms and should be treated as local sensitive state.
 - Misses require Jev and use the existing Effect retry/timeout/cancellation boundary. Provider failures never become lexical results. At this checkpoint search only exposed `--show-intent`. The retrieval checkpoint below now adds normal search; `--show-intent` remains intent-only and returns `retrieval: "not-requested"`. The old diagnostic search is explicitly `lexical-search`.
 - Intent confidence is the Jev kind-choice confidence, not search-result confidence. Phrase extraction and positive-score projection are initial, uncalibrated policies.
 
@@ -138,7 +144,7 @@ All three commands above completed fresh inference against `jev-1.13.0`. Repeati
 | Text | `find_explanation` | 1.00 | Explanation shape selected; taxonomy remains empty, so intent is phrase-based. |
 | Mixed | `find_configuration` | 0.48 | Permanent-rejection phrases separated as negatives; retry labels scored positively. |
 
-These are real feature observations, not a calibrated semantic-quality or retrieval pass. Extraction retained generic words such as “find” and “how”; intent-kind ambiguity and taxonomy usefulness remain open quality findings. No thresholds were tuned to these outputs. Local ignored `.jev/intent/` artifacts retain the structured responses for inspection. No Cloudflare requests were made.
+These are real feature observations, not a calibrated semantic-quality or retrieval pass. Extraction retained generic words such as “find” and “how”; intent-kind ambiguity and taxonomy usefulness remain open quality findings. No thresholds were tuned to these outputs. Local ignored `.sift/intent/` artifacts retain the structured responses for inspection. No Cloudflare requests were made.
 
 Credential-free validation: **29 tests passed**, typecheck and build passed. Tests cover deterministic projection/cache reuse without credentials, query/model/registry invalidation, invalid cached answers, malformed provider answers, query bounds, explicit missing-provider failure, JSON CLI output, and negative-field separation. Existing shared-provider tests separately cover retries and cancellation.
 
@@ -180,7 +186,7 @@ On 2026-09-18, Wrangler browser OAuth was used to create `jev-checkpoint` (768/c
 
 Initial publication attempts correctly remained pending. The first code mutation became query-visible several minutes after submission; the original fifteen-second backoff window was insufficient. Polling was expanded, but remains bounded and cancellable. Pending reruns reused local embeddings and accepted mutations. One additional idempotent code-vector upsert was performed directly through Wrangler while diagnosing delay; index info later showed the original product mutation processed. `wrangler vectorize info` counters lagged query visibility and were not used as proof of completeness.
 
-These are real publication/visibility observations, not semantic relevance evidence: the probes use each stored vector itself, not a new Jev query intent. In particular, multiple text records have identical projection documents; retrieving them does not demonstrate discrimination. The remote index and ignored fixture `.jev/` caches/manifests are retained for the next stage. Tokens are not stored in those artifacts or committed files.
+These are real publication/visibility observations, not semantic relevance evidence: the probes use each stored vector itself, not a new Jev query intent. In particular, multiple text records have identical projection documents; retrieving them does not demonstrate discrimination. The remote index and ignored fixture `.sift/` caches/manifests are retained for the next stage. Tokens are not stored in those artifacts or committed files.
 
 ### Service-compatible metadata and reconciliation evidence
 
@@ -222,7 +228,7 @@ The three commands above each completed fresh Jev `jev-1.13.0` inference (`reuse
 | Text: restore access after verifying identity | Four chunks tied at 0.47944596; the relevant `handbook.md:7` appeared third | **Not a relevance pass.** Identical embedding documents make ranking arbitrary; the text taxonomy still has no promoted labels. |
 | Mixed: retry temporary failures with a bounded delay | `operations.txt:3–4` first at 0.6500303; heading second; `queue.ts:1–3` third at 0.63876563 | Relevant guidance first, but the implementation-oriented intent did not favor code over a generic heading. |
 
-The earlier expiry query also returned the sole code record even though that function deletes a session and does not check expiry. This demonstrates why a nonempty vector response cannot be treated as a confident answer. No thresholds or fixtures were changed to make these observations pass. Fresh intent responses are retained in ignored fixture `.jev/intent/` caches. Fixture source content and published records/vectors were unchanged by these searches.
+The earlier expiry query also returned the sole code record even though that function deletes a session and does not check expiry. This demonstrates why a nonempty vector response cannot be treated as a confident answer. No thresholds or fixtures were changed to make these observations pass. Fresh intent responses are retained in ignored fixture `.sift/intent/` caches. Fixture source content and published records/vectors were unchanged by these searches.
 
 Credential-free validation: **37 tests passed**, plus typecheck, build, lint and formatting checks. Tests separately cover source-linked retrieval using cached controlled intent, real-adapter request shape and response validation, top-k/vector bounds, corrupt remote metadata, wrong namespace, incompatible embedding identity, account/index configuration mismatch, stale sources and source mutation during a remote query. These tests establish mechanics, not relevance.
 
@@ -263,7 +269,7 @@ Credential-free validation: **38 tests passed**, plus typecheck, build, lint and
 
 ## Reranking judgment cache — implemented; repeated live search verified
 
-- Validated judgments are atomically persisted under `.jev/reranking/<fingerprint>.json`. The fingerprint covers the entire exact request (pinned model, full chunk text/media type, structured query intent, untrusted-input policy, question and rubric) plus question-set version. Source identity, vector order and cosine scores are not inference inputs; unchanged judgments can survive publication changes when the actual request is unchanged.
+- Validated judgments are atomically persisted under `.sift/reranking/<fingerprint>.json`. The fingerprint covers the entire exact request (pinned model, full chunk text/media type, structured query intent, untrusted-input policy, question and rubric) plus question-set version. Source identity, vector order and cosine scores are not inference inputs; unchanged judgments can survive publication changes when the actual request is unchanged.
 - Cache reads validate schema/fingerprint and structured answers against the current questions/model. Invalid judgments trigger fresh inference; malformed JSON and filesystem failures fail explicitly. Only whitelisted answer fields are stored, not source text, request bodies, transport metadata or credentials. Failed searches may retain individually successful validated judgments for resumption.
 - Current source checks and post-reranking publication checks still run on cache hits. Missing/invalid entries alone require inference. `--rerank --explain` includes `judgments: { reused, new }` in the report; ordinary vector search does not expose reranking counts. Cache hits still require configured Jev credentials in this implementation, but do not call Jev. Cloudflare query embedding and retrieval remain live and billable.
 

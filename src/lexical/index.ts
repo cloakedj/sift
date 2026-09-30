@@ -28,8 +28,8 @@ export class LexicalService {
           terms: tokenize(`${chunk.path}\n${chunk.text}`),
         })),
       };
-      const path = join(inventory.root, ".jev", INDEX_FILE);
-      yield* this._fs.mkdir(join(inventory.root, ".jev"));
+      const path = join(inventory.root, ".sift", INDEX_FILE);
+      yield* this._fs.mkdir(join(inventory.root, ".sift"));
       yield* this._fs.write(path, JSON.stringify(index, null, 2));
       return { files: inventory.resources.length, chunks: index.chunks.length, path };
     });
@@ -65,7 +65,9 @@ export class LexicalService {
       const terms = tokenize(query);
       if (!terms.length)
         return yield* Errors.fail("INVALID_ARGUMENT", "Search query cannot be empty");
-      const index = yield* this._fs.readJson<LexicalIndex>(join(resolve(root), ".jev", INDEX_FILE));
+      const index = yield* this._fs.readJson<LexicalIndex>(
+        join(resolve(root), ".sift", INDEX_FILE),
+      );
       if (!index)
         return yield* Errors.fail(
           "NOT_FOUND",
@@ -73,7 +75,12 @@ export class LexicalService {
         );
       if (index.version !== 1 || !Array.isArray(index.chunks))
         return yield* Errors.fail("INVALID_DATA", "Invalid lexical diagnostic index");
+      const inventory = yield* this._inventory.discover(root);
+      if (!inventory.complete)
+        return yield* Errors.fail("INCOMPLETE", "Discovery incomplete; lexical search unavailable");
+      const current = new Map(inventory.chunks.map((chunk) => [chunk.id, chunk.chunkHash]));
       return index.chunks
+        .filter((chunk) => current.get(chunk.id) === chunk.chunkHash)
         .map((chunk) => ({ chunk, score: scoreChunk(chunk, query, terms) }))
         .filter((hit) => hit.score > 0)
         .sort((a, b) => b.score - a.score)

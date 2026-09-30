@@ -120,7 +120,7 @@ test("oversized paragraphs retain identity, exact Unicode ranges and bounded con
 });
 
 test("large documents preserve bounded streaming fallback rather than claiming extracted hierarchy", async () => {
-  const root = await mkdtemp(join(tmpdir(), "jev-document-fallback-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-document-fallback-"));
   try {
     await writeFile(join(root, "large.md"), "# Heading\n\n" + "x".repeat(MAX_STRUCTURE_BYTES));
     const inventory = await discoverInventory(root);

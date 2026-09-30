@@ -105,6 +105,41 @@ threshold policy—even when there are no vector hits. Candidate discovery still
 requires a valid publication and the existing cloud/intent path; this is not an
 offline mode or automatic provider-failure fallback.
 
+## Agent-facing output
+
+For routine harness retrieval, use compact presentation without changing ranking,
+thresholds, or provider work:
+
+```sh
+npm run --silent cli -- search 'How does onboarding persist failures?' --root src/onboarding --rerank --top-k 5 --agent --json
+```
+
+`--agent` requires `--json` and cannot be combined with `--show-intent`. It returns
+paths, inclusive source line ranges, symbols, relevance scores when assessed, and
+previews capped at 1200 UTF-16 code units per primary/supporting chunk. A
+`previewTruncated` flag explicitly marks clipped previews; source ranges still
+refer to the full chunk. Consumers should read those ranges for verification.
+Taxonomy, full provenance, publication backend details, and timings are omitted.
+Evidence status, bounded coverage, candidate/result truncation, budgets, findings,
+and supporting-context relationships remain visible.
+
+`--agent --explain --json` additionally exposes compact diagnostic candidates and
+judgment counts. Candidates are separate from accepted results. Explain does not
+increase the discovery budget; use a focused follow-up query for a missing angle.
+Omit `--agent` for the unchanged full diagnostic report, including intent and
+publication provenance. Agent reports are presentation output, not benchmark
+provenance artifacts or calibrated answer-confidence reports.
+
+The [`sift` skill](../.agents/skills/sift/SKILL.md) checks [configured corpus boundaries](configuration.md), starts with this format, and verifies returned ranges before
+searching again. Follow-ups target distinct unresolved facts rather than obeying a
+fixed count. Repeated follow-ups without resolving a gap trigger explain diagnosis
+once for the relevant query. Searches stop when results repeat or stop adding useful
+evidence; remaining gaps are disclosed, with lexical fallback or deeper investigation
+offered to the user. Explicit user budgets still apply. Adjacent ranges should be
+combined into one source read; individual ranked chunks remain distinct in the output
+to preserve their scores and acceptance semantics. These are cost-control policies,
+not measured quality guarantees.
+
 ## Bounded evidence expansion
 
 With `--rerank`, the merged shortlist contains up to eight primary candidates before

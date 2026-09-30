@@ -51,7 +51,7 @@ test("timing summaries reject invalid measurements through the typed failure cha
 });
 
 test("report files fail explicitly for empty or malformed timing data", async () => {
-  const root = await mkdtemp(join(tmpdir(), "jev-timings-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-timings-"));
   try {
     const path = join(root, "report.json");
     for (const report of [
@@ -77,7 +77,7 @@ test("report files fail explicitly for empty or malformed timing data", async ()
 });
 
 test("generation preserves existing content and rejects conflicting destinations", async () => {
-  const root = await mkdtemp(join(tmpdir(), "jev-scale-safe-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-scale-safe-"));
   const generate = (target: string, chunks = 23, kind: "code" | "text" | "mixed" = "mixed") =>
     Effect.runPromise(
       generateScaleCorpus(target, { chunks, kind }).pipe(
@@ -136,7 +136,7 @@ test("generation preserves existing content and rejects conflicting destinations
 
 for (const kind of ["code", "text", "mixed"] as const) {
   test(`generated ${kind} corpus matches requested inventory size`, async () => {
-    const root = await mkdtemp(join(tmpdir(), "jev-scale-count-"));
+    const root = await mkdtemp(join(tmpdir(), "sift-scale-count-"));
     try {
       for (const chunks of [1, 8, 10, 11, 23]) {
         const target = join(root, String(chunks));
@@ -160,7 +160,7 @@ for (const kind of ["code", "text", "mixed"] as const) {
 }
 
 test("scale corpus generation is deterministic and summarizes timings", async () => {
-  const root = await mkdtemp(join(tmpdir(), "jev-scale-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-scale-"));
   try {
     const report = await Effect.runPromise(
       generateScaleCorpus(root, { chunks: 23, kind: "mixed" }).pipe(

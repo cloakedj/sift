@@ -7,13 +7,13 @@ import { onboard, inspectRecords } from "./support/runtime.js";
 import { fakeJev } from "./support/jev.js";
 
 test("single-file onboarding resumes saved records after an unfinished manifest", async () => {
-  const root = await mkdtemp(join(tmpdir(), "jev-resume-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-resume-"));
   try {
     const source = join(root, "single.txt");
     await writeFile(source, "identity\n");
     const fake = fakeJev();
     await onboard(source, fake.client);
-    const path = join(root, ".jev", "index.json");
+    const path = join(root, ".sift", "index.json");
     const manifest = JSON.parse(await readFile(path, "utf8"));
     // Simulate interruption after the durable record write, before final manifest publication.
     manifest.state = "running";

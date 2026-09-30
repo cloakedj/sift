@@ -63,6 +63,26 @@ Yes in the design, but not yet by configuration alone. Sift treats the embedding
 
 Replacing Cloudflare would require another publication/retrieval adapter that preserves the same contracts: embedding-space identity, dimensions and metric checks, namespace or generation isolation, metadata validation, stale-source detection, resumable publication, and source-linked result validation.
 
+## Repository configuration
+
+Place `sift.config.json` at the corpus root to configure file selection and onboarding defaults:
+
+```json
+{
+  "version": 1,
+  "discovery": {
+    "include": ["src/**", "docs/**", "README.md"],
+    "exclude": ["**/*.test.ts"],
+    "respectGitignore": true
+  },
+  "onboarding": { "concurrency": 4 }
+}
+```
+
+`onboard` picks it up automatically. Preview with `npm run cli -- onboard . --dry-run` before inference. Corpus commands share these rules; use the same `--root` and optional `--config <file>` for onboarding, inspection, publication, and search. Local state lives in `.sift/`.
+
+See [configuration](docs/configuration.md) for matching rules, overrides, safety defaults, and migration from the old `.jev/` store. The repository search skill is [sift](.agents/skills/sift/SKILL.md).
+
 ## CLI usage
 
 See [src/cli/README.md](src/cli/README.md) for every CLI command, option, and the usual onboarding/publish/search workflow.

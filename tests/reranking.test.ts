@@ -52,7 +52,7 @@ const intent: QueryIntent = {
 };
 
 test("reranking judges full current source, reorders tied vectors, and fails closed", async () => {
-  const root = await mkdtemp(join(tmpdir(), "jev-reranking-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-reranking-"));
   try {
     const longText = "// Context " + "x".repeat(260) + "\nrestoreAccess();\n";
     await writeFile(join(root, "restore.ts"), longText);
@@ -176,7 +176,7 @@ test("reranking judges full current source, reorders tied vectors, and fails clo
     } finally {
       criteria[0] = originalCriterion;
     }
-    const cachePath = join(root, ".jev", "reranking", `${ranked[0]!.relevance!.fingerprint}.json`);
+    const cachePath = join(root, ".sift", "reranking", `${ranked[0]!.relevance!.fingerprint}.json`);
     const cached = JSON.parse(await readFile(cachePath, "utf8"));
     cached.response.answers.relevance.score = 99;
     await writeFile(cachePath, JSON.stringify(cached));

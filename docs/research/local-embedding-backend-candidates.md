@@ -27,7 +27,7 @@ Sources above are moving main-branch/model-card references; implementation must 
 ## Recommendations awaiting user decision
 
 1. Baseline model: `Xenova/all-MiniLM-L6-v2` through Transformers.js on CPU, pinned artifact revision and explicit dtype, mean pooling and normalized output. Use a conservative 256-token total input cap including special tokens, validated with the actual tokenizer without truncation. English-first baseline; not a multilingual or code-retrieval quality guarantee.
-2. Persistence: `.jev/vectors.sqlite` using `node:sqlite`, holding embedding-space metadata, vector rows, fingerprints, and publication/completeness state. Keep semantic records authoritative outside it. Exact cosine search runs in the adapter over eligible vectors, not a SQLite vector extension.
+2. Persistence: `.sift/vectors.sqlite` using `node:sqlite`, holding embedding-space metadata, vector rows, fingerprints, and publication/completeness state. Keep semantic records authoritative outside it. Exact cosine search runs in the adapter over eligible vectors, not a SQLite vector extension.
 3. At 10,000 x 384 float32 values, vector payload alone is 15,360,000 bytes (~14.65 MiB), excluding IDs, metadata, database/runtime overhead, and model memory. This is arithmetic, not a memory or latency benchmark.
 4. Detect/report overlength documents for the initial checkpoint; do not silently discard fields to fit the model. If representative documents frequently overflow, reopen projection/model choice rather than accepting a mostly unsearchable corpus.
 

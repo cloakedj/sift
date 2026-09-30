@@ -8,6 +8,8 @@ npm run cli -- <command> [options]
 
 Most commands accept `--json` for structured output. Commands that operate on a corpus accept `--root <path>`; some also accept a positional root for convenience.
 
+Corpus discovery automatically loads `sift.config.json` at the selected root (a file root uses its parent). Use `--config <file>` to override it, consistently across onboarding, inspection, publication, status, search, and lexical diagnostics. Patterns are config-directory-relative; no ancestor config search or nested config merging occurs. See [configuration](../../docs/configuration.md) for all options, precedence, safety rules, and `.sift/` state migration.
+
 Semantic onboarding, query intent, reranking, and relevance benchmarks may call Jev/TypeSafe. Publishing and semantic retrieval use Cloudflare Workers AI and Vectorize in the current implementation. See the repository README for Cloudflare setup.
 
 ## Commands
@@ -23,18 +25,23 @@ npm run cli -- --help
 
 ### `onboard`
 
-Discover resources, chunk them, classify chunks, and write local semantic records under the target root.
+Discover resources, chunk them, classify chunks, and write local semantic records under `.sift/` at the target root (or the parent for a single-file root).
 
 ```sh
-npm run cli -- onboard [root] [--root <path>] [--dry-run] [--limit <chunks>] [--rerun-governance] [--json]
+npm run cli -- onboard [root] [--root <path>] [--config <file>] [--dry-run] [--limit <chunks>] [--concurrency <n>] [--rerun-governance | --no-rerun-governance] [--json]
 ```
 
 Options:
 
-- `--dry-run`: inventory resources and chunks only; no model calls, writes, or publication.
-- `--limit <chunks>`: classify at most this many chunks during semantic onboarding.
+- `--config <file>`: load an alternate configuration instead of the root's `sift.config.json`.
+- `--dry-run`: inventory selected resources and chunks only; no model calls, writes, or publication. JSON includes the resolved config and skipped paths/reasons. Configured onboarding settings are ignored in this mode.
+- `--limit <chunks>`: process at most this many chunks; the remainder are deferred, leaving incomplete onboarding.
+- `--concurrency <n>`: positive integer classification concurrency.
 - `--rerun-governance`: rerun taxonomy governance during semantic onboarding.
+- `--no-rerun-governance`: override a configured `rerunGovernance: true`.
 - `--json`: emit the manifest or inventory as JSON.
+
+Explicit options override configuration, then built-in defaults. Classification/governance flags cannot be combined with `--dry-run`.
 
 Examples:
 
@@ -193,6 +200,8 @@ Options:
 ## Typical workflow
 
 ```sh
+# Optional: create sift.config.json, then preview its selected corpus.
+npm run cli -- onboard . --dry-run
 npm run cli -- onboard .
 npm run cli -- inspect validation --root .
 npm run cli -- publish --root .

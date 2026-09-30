@@ -10,7 +10,8 @@ export const defaultPolicy: DiscoveryPolicy = {
   hiddenDirectories: true,
   directories: new Set([
     ".git",
-    ".jev",
+    ".sift",
+    ".jev", // Legacy state remains excluded even when hidden directories are enabled.
     "node_modules",
     "dist",
     "build",
@@ -20,6 +21,7 @@ export const defaultPolicy: DiscoveryPolicy = {
     "__pycache__",
   ]),
   files: new Set([
+    "sift.config.json",
     ".env",
     ".npmrc",
     ".pypirc",

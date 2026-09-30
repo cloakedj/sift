@@ -14,7 +14,7 @@ import { embeddingDocument } from "../src/onboarding/utils.js";
 import { fakeJev } from "./support/jev.js";
 
 async function temporary(run: (root: string) => Promise<void>) {
-  const root = await mkdtemp(join(tmpdir(), "jev-semantic-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-semantic-"));
   try {
     await run(root);
   } finally {
@@ -26,7 +26,8 @@ for (const scope of ["code", "text", "mixed"])
     temporary(async (root) => {
       await cp(resolve("tests/fixtures", scope), root, {
         recursive: true,
-        filter: (source) => !source.split(/[\\/]/).includes(".jev"),
+        filter: (source) =>
+          !source.split(/[\\/]/).some((part) => part === ".sift" || part === ".jev"),
       });
       const { client, calls } = fakeJev();
       const first = await onboard(root, client);
@@ -60,7 +61,7 @@ for (const scope of ["code", "text", "mixed"])
         assert.ok(record.resource.range.endByte > record.resource.range.startByte);
         assert.ok(record.taxonomy.concepts.length > 0);
       }
-      const receiptFile = join(root, ".jev", "receipts", `${first.manifest.runId}.jsonl`);
+      const receiptFile = join(root, ".sift", "receipts", `${first.manifest.runId}.jsonl`);
       const receiptBefore = await readFile(receiptFile, "utf8");
       const second = await onboard(root, client);
       assert.equal(second.manifest.classified, 0);
@@ -101,7 +102,7 @@ for (const scope of ["code", "text", "mixed"])
       );
       assert.equal(JSON.parse(validationJson).classifications.records, inspected.records.length);
       assert.deepEqual(JSON.parse(validationJson).projections, validation.projections);
-      assert.ok((await readdir(join(root, ".jev"))).every((name) => !name.includes("vector")));
+      assert.ok((await readdir(join(root, ".sift"))).every((name) => !name.includes("vector")));
     }));
 
 test("classification failures remain explicit, resume retries only failures, and changed/deleted source is never current", async () =>
@@ -197,9 +198,9 @@ test("partial limit, exclusive lock, and model changes invalidate reuse", async 
     const resumed = await onboard(root, fake.client);
     assert.equal(resumed.manifest.reused, 1);
     assert.equal(resumed.manifest.classified, 2);
-    await writeFile(join(root, ".jev", "onboarding.lock"), "locked");
+    await writeFile(join(root, ".sift", "onboarding.lock"), "locked");
     await assert.rejects(onboard(root, fake.client), /locked/);
-    await rm(join(root, ".jev", "onboarding.lock"));
+    await rm(join(root, ".sift", "onboarding.lock"));
     const evaluate = fake.client.evaluate;
     const newModel = {
       model: "new-pinned-model",
@@ -217,7 +218,7 @@ test("projection-only changes reuse classification and repair the deterministic 
     await writeFile(join(root, "a.txt"), "access\n");
     const fake = fakeJev();
     const first = await onboard(root, fake.client);
-    const path = join(root, ".jev", "records", `${first.manifest.records[0]!.id}.json`);
+    const path = join(root, ".sift", "records", `${first.manifest.records[0]!.id}.json`);
     const record = JSON.parse(await readFile(path, "utf8"));
     record.embeddingDocument = "old projection";
     record.provenance.projectionVersion = "old-version";

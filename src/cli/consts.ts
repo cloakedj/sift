@@ -1,6 +1,7 @@
 export const COMMON_OPTIONS = { json: { type: "boolean" }, root: { type: "string" } } as const;
 export const USAGE = [
-  "npm run cli -- onboard [root] [--dry-run] [--json] [--limit <chunks>]",
+  "npm run cli -- onboard [root] [--config <file>] [--dry-run] [--json] [--limit <chunks>] [--concurrency <n>] [--rerun-governance | --no-rerun-governance]",
+  "Corpus commands automatically load sift.config.json at the selected root. --config <file> overrides it; reuse that override for inspect, publish, status, search, and lexical commands.",
   "npm run cli -- inspect records|taxonomy|validation --root <path> [--json]",
   "npm run cli -- repair-projections --root <path> [--json]",
   "npm run cli -- publish --root <path> [--json]",
@@ -10,7 +11,8 @@ export const USAGE = [
   "npm run cli -- evaluate-relevance <cases.json> --top-k <n> [--json]",
   "npm run cli -- benchmark-relevance <suite.json> --root <corpora-parent> --top-k <n> --policy answer-if-any|rerank-min-relevance --run-paid [--rerank --min-relevance <0..1>] [--json]",
   "npm run cli -- index [root] (legacy lexical diagnostic)",
-  "npm run cli -- search <query> [--explain] [--rerank] [--semantic-only] [--anchor <literal>] [--top-k <n>] [--root <path>] [--json]",
+  "npm run cli -- search <query> [--agent] [--explain] [--rerank] [--semantic-only] [--anchor <literal>] [--top-k <n>] [--root <path>] [--json]",
+  "Search --agent requires --json: compact citations and bounded previews with coverage warnings. Add --explain for compact diagnostic candidates; omit --agent for full reports.",
   "Search --top-k limits returned results. With --rerank, up to 8 candidates plus bounded supporting context are judged (n <= 8); this may increase paid judgments.",
   "Reranked search withholds evidence below --min-relevance <0..1> (default 0.75, an uncalibrated policy). Use --explain for rejected candidates or --min-relevance 0 for diagnostic retrieval.",
   "npm run cli -- search <query> --show-intent [--root <path>] [--json]",

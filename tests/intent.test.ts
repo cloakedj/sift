@@ -28,11 +28,11 @@ function infer(
   );
 }
 test("query intent validates cache, invalidates inputs, preserves negatives, and never silently bypasses inference", async () => {
-  const root = await mkdtemp(join(tmpdir(), "jev-intent-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-intent-"));
   try {
     await writeFile(join(root, "a.ts"), "credentials();\n");
     await onboard(root, fakeJev().client);
-    const taxonomyPath = join(root, ".jev", "taxonomy.json");
+    const taxonomyPath = join(root, ".sift", "taxonomy.json");
     const original = await readFile(taxonomyPath, "utf8");
     let calls = 0;
     const client: JevClient = {
@@ -101,7 +101,7 @@ test("query intent validates cache, invalidates inputs, preserves negatives, and
       infer(root, query, "intent-test-v2", unavailable),
       /No provider available/,
     );
-    const cachePath = join(root, ".jev", "intent", `${first.intent.provenance.fingerprint}.json`);
+    const cachePath = join(root, ".sift", "intent", `${first.intent.provenance.fingerprint}.json`);
     const cache = JSON.parse(await readFile(cachePath, "utf8"));
     cache.response.answers = {};
     await writeFile(cachePath, JSON.stringify(cache));

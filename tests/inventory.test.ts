@@ -21,7 +21,7 @@ const cli = (args: string[]) =>
     ),
   );
 async function temporary(run: (root: string) => Promise<void>) {
-  const root = await mkdtemp(join(tmpdir(), "jev-inventory-"));
+  const root = await mkdtemp(join(tmpdir(), "sift-inventory-"));
   try {
     await run(root);
   } finally {
@@ -65,6 +65,7 @@ test("privacy exclusions, binary detection, symlinks, and source policy override
       "node_modules/pkg/index.js",
       ".hidden/note.md",
       ".git/config",
+      ".sift/index.json",
       ".jev/index.json",
       "dist/output.js",
     ];
@@ -168,7 +169,7 @@ test("missing credentials and invalid arguments fail explicitly", () => {
     ["--dry-run", "--unknown"],
     ["--dry-run", "a", "b"],
     ["--dry-run", "--root", "a", "b"],
-    ["--dry-run", "/nonexistent-jev-fixture"],
+    ["--dry-run", "/nonexistent-sift-fixture"],
   ]) {
     const result = spawnSync(
       process.execPath,

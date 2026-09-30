@@ -19,16 +19,16 @@ The product runner requires explicit acknowledgement of paid calls and an explic
 ```bash
 npm run --silent cli -- benchmark-relevance tests/support/relevance-cases.json \
   --root tests/fixtures --top-k 8 --policy answer-if-any --run-paid --json \
-  > /tmp/jev-vector-benchmark.json
+  > /tmp/sift-vector-benchmark.json
 
 npm run --silent cli -- benchmark-relevance tests/support/relevance-cases.json \
   --root tests/fixtures --top-k 8 --policy answer-if-any --run-paid --rerank --json \
-  > /tmp/jev-reranked-benchmark.json
+  > /tmp/sift-reranked-benchmark.json
 
 npm run --silent cli -- benchmark-relevance tests/support/relevance-cases.json \
   --root tests/fixtures --top-k 8 --policy rerank-min-relevance --rerank \
   --min-relevance 0.8 --run-paid --json \
-  > /tmp/jev-reranked-threshold-benchmark.json
+  > /tmp/sift-reranked-threshold-benchmark.json
 ```
 
 Configure the same Jev model and Cloudflare account/index used by the fixture publications before running. The runner never onboards, publishes, or deletes vectors. It performs live searches, which may populate intent/reranking caches and incur provider usage. Keep output outside the corpus. Full explain reports contain query text, source previews, paths, classifications and provenance; treat them as sensitive local artifacts.

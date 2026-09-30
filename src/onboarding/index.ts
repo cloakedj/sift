@@ -37,12 +37,16 @@ export class OnboardingService {
           timings.push({ stage, milliseconds: now - stageStarted });
           stageStarted = now;
         };
-        const concurrency = options.concurrency ?? CLASSIFICATION_CONCURRENCY;
+        const settings = yield* this._inventory.configuration(root);
+        const configured = settings.config.onboarding;
+        const concurrency =
+          options.concurrency ?? configured?.concurrency ?? CLASSIFICATION_CONCURRENCY;
+        const limit = options.limit ?? configured?.limit;
+        const rerunGovernance = options.rerunGovernance ?? configured?.rerunGovernance;
         if (
           !Number.isSafeInteger(concurrency) ||
           concurrency < 1 ||
-          (options.limit !== undefined &&
-            (!Number.isSafeInteger(options.limit) || options.limit < 1))
+          (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1))
         )
           return yield* Errors.fail(
             "INVALID_ARGUMENT",
@@ -55,7 +59,7 @@ export class OnboardingService {
         const runId = randomUUID();
         const store = yield* this._stores.open(root, runId);
         mark("store-open");
-        const chunks = inventory.chunks.slice(0, options.limit);
+        const chunks = inventory.chunks.slice(0, limit);
         const manifest: RunManifest = {
           schemaVersion: 2,
           runId,
@@ -85,7 +89,7 @@ export class OnboardingService {
             skipped: inventory.skipped,
           },
         );
-        const taxonomy = yield* this._taxonomy.govern(inventory, store, options.rerunGovernance);
+        const taxonomy = yield* this._taxonomy.govern(inventory, store, rerunGovernance);
         mark("taxonomy-governance");
         const progress = yield* Effect.acquireRelease(
           Effect.sync(() =>

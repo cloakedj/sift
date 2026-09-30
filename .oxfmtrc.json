@@ -6,6 +6,7 @@
     "src/publication/input/assets/**",
     "dist/**",
     "node_modules/**",
+    "**/.sift/**",
     "**/.jev/**",
     ".wayfinder/**"
   ]
