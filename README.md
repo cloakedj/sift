@@ -63,6 +63,10 @@ Yes in the design, but not yet by configuration alone. Sift treats the embedding
 
 Replacing Cloudflare would require another publication/retrieval adapter that preserves the same contracts: embedding-space identity, dimensions and metric checks, namespace or generation isolation, metadata validation, stale-source detection, resumable publication, and source-linked result validation.
 
+## CLI usage
+
+See [src/cli/README.md](src/cli/README.md) for every CLI command, option, and the usual onboarding/publish/search workflow.
+
 ## Development
 
 ```sh
