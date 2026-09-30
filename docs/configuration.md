@@ -1,6 +1,14 @@
 # Repository configuration
 
-Sift automatically loads **`sift.config.json`** from the selected corpus root. For a single-file root, it checks that file's parent. It does not search ancestors, merge nested configs, or execute JavaScript/TypeScript configuration.
+When a corpus CLI command has no explicit root or `--config`, Sift searches from the working directory upward for the nearest **`sift.config.json`**. Its directory becomes the corpus root, and `.sift/` assets are located there. If no config exists, the root remains the working directory. Nested configurations win; configurations are never merged or executed as JavaScript/TypeScript.
+
+This applies consistently to `onboard`, `inspect`, `publish`, `status`, `search` (including `--show-intent`), `repair-projections`, `index`, and `lexical-search`. Benchmark and fixture-generation commands retain their existing explicit scope.
+
+Explicit `--root` (or an onboarding/index positional root) disables ancestor discovery. `--config` also disables discovery and retains the existing default root of cwd; it does not relocate state. Use `--no-discover-config` for cwd-only behavior without a root override. With explicit roots or discovery disabled, configuration is loaded only at the selected root (or a file root's parent). Programmatic services retain this root-local behavior.
+
+Human-readable corpus output reports the root, config, and state location. JSON objects include `resolvedRoot`, `configPath` (null when absent), and `stateDirectory`; legacy lexical-search arrays are now returned under `results` alongside these fields. No state is moved or migrated. Existing subdirectory corpora should use an explicit root or `--no-discover-config` to preserve their identity.
+
+For example, from `src/retrieval/`, `sift search "retry behavior"` uses the nearest configured corpus rather than creating a new subdirectory corpus. Preview selection with `onboard --dry-run --json` before paid work.
 
 ```json
 {

@@ -8,7 +8,7 @@ npm run cli -- <command> [options]
 
 Most commands accept `--json` for structured output. Commands that operate on a corpus accept `--root <path>`; some also accept a positional root for convenience.
 
-Corpus discovery automatically loads `sift.config.json` at the selected root (a file root uses its parent). Use `--config <file>` to override it, consistently across onboarding, inspection, publication, status, search, and lexical diagnostics. Patterns are config-directory-relative; no ancestor config search or nested config merging occurs. See [configuration](../../docs/configuration.md) for all options, precedence, safety rules, and `.sift/` state migration.
+With no explicit root or `--config`, corpus commands find the nearest ancestor `sift.config.json` from cwd and use its directory as the root and `.sift/` location (falling back to cwd). Explicit `--root`, positional roots, and `--config` retain existing scope; `--config` alone does not change the root. `--no-discover-config` opts out of ancestor lookup. Explicit roots load only their own config (a file root uses its parent). Use overrides consistently across commands. Patterns are config-directory-relative; nested configs are not merged. Human output reports the resolved scope; JSON includes `resolvedRoot`, `configPath`, and `stateDirectory`. Legacy lexical-search JSON wraps its array in `results`. See [configuration](../../docs/configuration.md) for all options, precedence, safety rules, and `.sift/` state migration.
 
 Semantic onboarding, query intent, reranking, and relevance benchmarks may call Jev/TypeSafe. Publishing and semantic retrieval use Cloudflare Workers AI and Vectorize in the current implementation. See the repository README for Cloudflare setup.
 

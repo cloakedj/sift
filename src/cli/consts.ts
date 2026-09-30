@@ -1,7 +1,11 @@
-export const COMMON_OPTIONS = { json: { type: "boolean" }, root: { type: "string" } } as const;
+export const COMMON_OPTIONS = {
+  json: { type: "boolean" },
+  root: { type: "string" },
+  "no-discover-config": { type: "boolean" },
+} as const;
 export const USAGE = [
   "npm run cli -- onboard [root] [--config <file>] [--dry-run] [--json] [--limit <chunks>] [--concurrency <n>] [--resume] [--rerun-governance | --no-rerun-governance]",
-  "Corpus commands automatically load sift.config.json at the selected root. --config <file> overrides it; reuse that override for inspect, publish, status, search, and lexical commands.",
+  "Implicit corpus roots use the nearest ancestor sift.config.json (otherwise cwd). --root, positional roots, or --config preserve explicit scope. --no-discover-config disables ancestor lookup. Reuse explicit overrides across corpus commands.",
   "npm run cli -- inspect records|taxonomy|validation --root <path> [--json]",
   "npm run cli -- repair-projections --root <path> [--json]",
   "npm run cli -- publish --root <path> [--json]",
