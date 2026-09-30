@@ -92,7 +92,7 @@ Programmatic callers can provide the `ConfigurationPath` Effect reference for an
 
 New state is written under **`.sift/`**, including manifests, records, receipts, taxonomy, publication data, intent/reranking caches, locks, and the lexical diagnostic index. Older releases used `.jev/`; there is no automatic runtime migration or fallback read.
 
-To retain an old store, stop all Sift processes, ensure no writer is active, and rename `.jev` to `.sift` **only if `.sift` does not already exist**. Never merge two state directories or delete an active lock. Keep the corpus root unchanged, then run `status`/inspection. If both stores exist, preserve both and choose a recovery strategy before proceeding. Both names remain Git/tooling/discovery exclusions to protect old artifacts. Renaming local state does not rename provider models or remote Vectorize indexes.
+To retain an old store, stop all Sift processes, ensure no writer is active, and rename `.jev` to `.sift` **only if `.sift` does not already exist**. Never merge two state directories or delete an active lock. If semantic onboarding was interrupted and you have verified no Sift writer is active, `onboard --resume` removes `.sift/onboarding.lock` before taking a new lock. Keep the corpus root unchanged, then run `status`/inspection. If both stores exist, preserve both and choose a recovery strategy before proceeding. Both names remain Git/tooling/discovery exclusions to protect old artifacts. Renaming local state does not rename provider models or remote Vectorize indexes.
 
 ## Validation scope
 

@@ -76,6 +76,7 @@ export class CliApplication {
               concurrency: { type: "string" },
               "rerun-governance": { type: "boolean" },
               "no-rerun-governance": { type: "boolean" },
+              resume: { type: "boolean" },
             },
           }),
         "INVALID_ARGUMENT",
@@ -91,11 +92,12 @@ export class CliApplication {
           values.limit ||
           values.concurrency ||
           values["rerun-governance"] ||
-          values["no-rerun-governance"]
+          values["no-rerun-governance"] ||
+          values.resume
         )
           return yield* Errors.fail(
             "INVALID_ARGUMENT",
-            "Classification and governance flags apply to semantic onboarding, not discovery",
+            "Classification, governance, and recovery flags apply to semantic onboarding, not discovery",
           );
         const inventory = yield* Effect.scoped(
           Effect.gen(this, function* () {
@@ -162,6 +164,7 @@ export class CliApplication {
                     "INVALID_ARGUMENT",
                   ),
             rerunGovernance: values["no-rerun-governance"] ? false : values["rerun-governance"],
+            resume: values.resume,
           }).pipe(
             Effect.provide(OnboardingLive),
             Effect.provide(TaxonomyLive),

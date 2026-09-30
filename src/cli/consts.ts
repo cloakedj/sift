@@ -1,6 +1,6 @@
 export const COMMON_OPTIONS = { json: { type: "boolean" }, root: { type: "string" } } as const;
 export const USAGE = [
-  "npm run cli -- onboard [root] [--config <file>] [--dry-run] [--json] [--limit <chunks>] [--concurrency <n>] [--rerun-governance | --no-rerun-governance]",
+  "npm run cli -- onboard [root] [--config <file>] [--dry-run] [--json] [--limit <chunks>] [--concurrency <n>] [--resume] [--rerun-governance | --no-rerun-governance]",
   "Corpus commands automatically load sift.config.json at the selected root. --config <file> overrides it; reuse that override for inspect, publish, status, search, and lexical commands.",
   "npm run cli -- inspect records|taxonomy|validation --root <path> [--json]",
   "npm run cli -- repair-projections --root <path> [--json]",

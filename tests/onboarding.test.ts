@@ -200,7 +200,8 @@ test("partial limit, exclusive lock, and model changes invalidate reuse", async 
     assert.equal(resumed.manifest.classified, 2);
     await writeFile(join(root, ".sift", "onboarding.lock"), "locked");
     await assert.rejects(onboard(root, fake.client), /locked/);
-    await rm(join(root, ".sift", "onboarding.lock"));
+    const unlocked = await onboard(root, fake.client, { resume: true });
+    assert.equal(unlocked.manifest.reused, 3);
     const evaluate = fake.client.evaluate;
     const newModel = {
       model: "new-pinned-model",

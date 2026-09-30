@@ -28,7 +28,7 @@ npm run cli -- --help
 Discover resources, chunk them, classify chunks, and write local semantic records under `.sift/` at the target root (or the parent for a single-file root).
 
 ```sh
-npm run cli -- onboard [root] [--root <path>] [--config <file>] [--dry-run] [--limit <chunks>] [--concurrency <n>] [--rerun-governance | --no-rerun-governance] [--json]
+npm run cli -- onboard [root] [--root <path>] [--config <file>] [--dry-run] [--limit <chunks>] [--concurrency <n>] [--resume] [--rerun-governance | --no-rerun-governance] [--json]
 ```
 
 Options:
@@ -37,17 +37,19 @@ Options:
 - `--dry-run`: inventory selected resources and chunks only; no model calls, writes, or publication. JSON includes the resolved config and skipped paths/reasons. Configured onboarding settings are ignored in this mode.
 - `--limit <chunks>`: process at most this many chunks; the remainder are deferred, leaving incomplete onboarding.
 - `--concurrency <n>`: positive integer classification concurrency.
+- `--resume`: remove an existing `.sift/onboarding.lock` before starting semantic onboarding. Use only after verifying no Sift writer is still active.
 - `--rerun-governance`: rerun taxonomy governance during semantic onboarding.
 - `--no-rerun-governance`: override a configured `rerunGovernance: true`.
 - `--json`: emit the manifest or inventory as JSON.
 
-Explicit options override configuration, then built-in defaults. Classification/governance flags cannot be combined with `--dry-run`.
+Explicit options override configuration, then built-in defaults. Classification, governance, and recovery flags cannot be combined with `--dry-run`.
 
 Examples:
 
 ```sh
 npm run cli -- onboard . --dry-run
 npm run cli -- onboard --root . --limit 25
+npm run cli -- onboard . --resume
 ```
 
 ### `inspect`

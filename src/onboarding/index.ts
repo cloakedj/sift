@@ -65,7 +65,7 @@ export class OnboardingService {
           `Opening local store — ${inventory.resources.length} resources, ${inventory.chunks.length} chunks discovered`,
         );
         const runId = randomUUID();
-        const store = yield* this._stores.open(root, runId);
+        const store = yield* this._stores.open(root, runId, { resume: options.resume });
         mark("store-open");
         const chunks = inventory.chunks.slice(0, limit);
         const manifest: RunManifest = {

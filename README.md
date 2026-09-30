@@ -79,7 +79,7 @@ Place `sift.config.json` at the corpus root to configure file selection and onbo
 }
 ```
 
-`onboard` picks it up automatically. Preview with `npm run cli -- onboard . --dry-run` before inference. Corpus commands share these rules; use the same `--root` and optional `--config <file>` for onboarding, inspection, publication, and search. Local state lives in `.sift/`.
+`onboard` picks it up automatically. Preview with `npm run cli -- onboard . --dry-run` before inference. If a stopped run leaves `.sift/onboarding.lock`, verify no writer is active and rerun onboarding with `--resume` to remove it. Corpus commands share these rules; use the same `--root` and optional `--config <file>` for onboarding, inspection, publication, and search. Local state lives in `.sift/`.
 
 See [configuration](docs/configuration.md) for matching rules, overrides, safety defaults, and migration from the old `.jev/` store. The repository search skill is [sift](.agents/skills/sift/SKILL.md).
 

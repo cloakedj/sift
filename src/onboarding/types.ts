@@ -63,6 +63,7 @@ export interface OnboardOptions {
   limit?: number;
   concurrency?: number;
   rerunGovernance?: boolean;
+  resume?: boolean;
 }
 export interface LocalStore {
   read<T>(path: string): Effect.Effect<T | undefined, AppError>;

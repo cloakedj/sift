@@ -71,8 +71,9 @@ export class StoreService {
   /**
    * Acquire a single-writer lock for the scope; failed acquisition must never
    * release another run's lock. Reject symlinked state directories before writing.
+   * When resuming, remove an existing lock before acquiring a new one.
    */
-  public open(root: string, runId: string) {
+  public open(root: string, runId: string, options: { resume?: boolean } = {}) {
     return Effect.gen(this, function* () {
       const directory = yield* this.directory(root);
       for (const path of [directory, join(directory, "records"), join(directory, "receipts")]) {
@@ -83,6 +84,7 @@ export class StoreService {
           });
       }
       const lock = join(directory, "onboarding.lock");
+      if (options.resume) yield* this._fs.remove(lock);
       yield* Effect.acquireRelease(
         this._fs.write(lock, JSON.stringify({ pid: process.pid, runId }), true).pipe(
           Effect.catchIf(
@@ -90,7 +92,7 @@ export class StoreService {
             () =>
               Errors.fail(
                 "STORE_LOCKED",
-                `Onboarding is locked. If its process has stopped, remove ${lock} to resume.`,
+                `Onboarding is locked. If its process has stopped, rerun with --resume or remove ${lock}.`,
                 { path: lock },
               ),
           ),
