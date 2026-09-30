@@ -1,6 +1,7 @@
 import { choice, type Questions, type SystemOneRequest } from "@typesafe-ai/sdk";
 import { Context, Effect, Layer } from "effect";
 import { Errors, type AppError } from "../errors/index.js";
+import type { ActivityHandle } from "../messages/types.js";
 import type { Inventory } from "../inventory/types.js";
 import type { LocalStore } from "../onboarding/types.js";
 import { hash } from "../shared/utils.js";
@@ -24,6 +25,7 @@ class GovernanceRun {
     inventory: Inventory,
     private readonly _jev: JevService,
     private readonly _store: LocalStore,
+    private readonly _activity?: ActivityHandle,
   ) {
     const harvest = harvestCandidates(inventory);
     this._snapshot = {
@@ -44,6 +46,9 @@ class GovernanceRun {
    */
   public run(rerun: boolean) {
     return Effect.gen(this, function* () {
+      this._activity?.update(
+        `Onboarding: loading cached taxonomy judgments — ${this._selected.length} candidates`,
+      );
       const previous = yield* this._store.read<TaxonomySnapshot>("taxonomy.json");
       for (const dimension of DIMENSIONS) {
         const pending: Candidate[] = [];
@@ -66,6 +71,9 @@ class GovernanceRun {
             dimension,
           );
       }
+      this._activity?.update(
+        `Onboarding: saving taxonomy — ${this._snapshot.judgments.length} judgments`,
+      );
       yield* this._save();
       return this._snapshot;
     });
@@ -161,6 +169,9 @@ class GovernanceRun {
         yield* this._evaluate(batch.slice(middle), dimension);
         return;
       }
+      this._activity?.update(
+        `Onboarding: governing ${dimension} — ${this._snapshot.judgments.length}/${this._selected.length * DIMENSIONS.length} judgments complete (including cached), batch of ${batch.length}`,
+      );
       const evaluation = Effect.gen(this, function* () {
         if (tooLarge)
           return yield* Errors.fail(
@@ -219,9 +230,9 @@ class GovernanceRun {
 }
 export class TaxonomyService {
   public constructor(private readonly _jev: JevService) {}
-  public govern(inventory: Inventory, store: LocalStore, rerun = false) {
+  public govern(inventory: Inventory, store: LocalStore, rerun = false, activity?: ActivityHandle) {
     return Errors.attempt(
-      () => new GovernanceRun(inventory, this._jev, store),
+      () => new GovernanceRun(inventory, this._jev, store, activity),
       "INVALID_DATA",
     ).pipe(Effect.flatMap((run) => run.run(rerun)));
   }

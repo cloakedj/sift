@@ -82,11 +82,11 @@ class SpinnerHandle implements ActivityHandle {
 
 class DelayedSpinnerHandle implements ActivityHandle {
   private readonly _timer: ReturnType<typeof setTimeout> | undefined;
-  private _handle: SpinnerHandle | undefined;
+  private _handle: ActivityHandle | undefined;
   private _text: string;
   public constructor(
     text: string,
-    private readonly _start: (text: string) => SpinnerHandle,
+    private readonly _start: (text: string) => ActivityHandle,
     delayMilliseconds: number,
   ) {
     this._text = text;
@@ -161,7 +161,7 @@ export class MessageService {
     );
   }
   /** Replace the current display; scoped callers stop their own handle on exit. */
-  public spinner(text: string) {
+  public spinner(text: string): ActivityHandle {
     this._active?.stop();
     const handle = new SpinnerHandle(text, this._enableProgress);
     this._active = handle;
@@ -169,6 +169,16 @@ export class MessageService {
   }
   public activity(text: string, delayMilliseconds = 350) {
     return this.delayedActivity(text, delayMilliseconds);
+  }
+  /**
+   * Announce a stage in logs and render it immediately on interactive terminals.
+   * The display is released on failure or interruption as well as success.
+   */
+  public stage(label: string, text: string) {
+    return Effect.gen(this, function* () {
+      yield* this.report({ label, level: "info", text });
+      return yield* this.immediateActivity(`${label}: ${text}`);
+    });
   }
   public immediateActivity(text: string) {
     return Effect.acquireRelease(

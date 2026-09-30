@@ -97,7 +97,15 @@ export class CliApplication {
             "INVALID_ARGUMENT",
             "Classification and governance flags apply to semantic onboarding, not discovery",
           );
-        const inventory = yield* discoverInventory(root);
+        const inventory = yield* Effect.scoped(
+          Effect.gen(this, function* () {
+            const activity = yield* this._output.stage(
+              "Onboarding",
+              "Discovering and chunking resources (dry run)",
+            );
+            return yield* discoverInventory(root, undefined, activity);
+          }),
+        );
         if (values.json) yield* this._output.json(inventory);
         else {
           yield* this._output.report({
@@ -141,20 +149,25 @@ export class CliApplication {
         values.limit === undefined
           ? undefined
           : yield* Errors.attempt(() => positiveInteger(values.limit, 1), "INVALID_ARGUMENT");
-      const result = yield* onboard(root, {
-        limit,
-        concurrency:
-          values.concurrency === undefined
-            ? undefined
-            : yield* Errors.attempt(
-                () => positiveInteger(values.concurrency, 1),
-                "INVALID_ARGUMENT",
-              ),
-        rerunGovernance: values["no-rerun-governance"] ? false : values["rerun-governance"],
-      }).pipe(
-        Effect.provide(OnboardingLive),
-        Effect.provide(TaxonomyLive),
-        Effect.provide(JevLive),
+      const result = yield* Effect.scoped(
+        Effect.gen(this, function* () {
+          yield* this._output.stage("Onboarding", "Initializing inference provider");
+          return yield* onboard(root, {
+            limit,
+            concurrency:
+              values.concurrency === undefined
+                ? undefined
+                : yield* Errors.attempt(
+                    () => positiveInteger(values.concurrency, 1),
+                    "INVALID_ARGUMENT",
+                  ),
+            rerunGovernance: values["no-rerun-governance"] ? false : values["rerun-governance"],
+          }).pipe(
+            Effect.provide(OnboardingLive),
+            Effect.provide(TaxonomyLive),
+            Effect.provide(JevLive),
+          );
+        }),
       );
       if (values.json) yield* this._output.json(result.manifest);
       else {

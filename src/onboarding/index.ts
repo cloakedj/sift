@@ -37,6 +37,7 @@ export class OnboardingService {
           timings.push({ stage, milliseconds: now - stageStarted });
           stageStarted = now;
         };
+        yield* this._messages.stage("Onboarding", "Loading configuration");
         const settings = yield* this._inventory.configuration(root);
         const configured = settings.config.onboarding;
         const concurrency =
@@ -53,9 +54,16 @@ export class OnboardingService {
             "Concurrency and limit must be positive integers",
           );
         mark("configuration");
-        yield* this._messages.activity("Onboarding: discovering resources");
-        const inventory = yield* this._inventory.discover(root);
+        const discovery = yield* this._messages.stage(
+          "Onboarding",
+          "Discovering and chunking resources",
+        );
+        const inventory = yield* this._inventory.discover(root, undefined, discovery);
         mark("resource-discovery");
+        yield* this._messages.stage(
+          "Onboarding",
+          `Opening local store — ${inventory.resources.length} resources, ${inventory.chunks.length} chunks discovered`,
+        );
         const runId = randomUUID();
         const store = yield* this._stores.open(root, runId);
         mark("store-open");
@@ -77,9 +85,13 @@ export class OnboardingService {
           classified: 0,
           startedAt: new Date().toISOString(),
         };
+        yield* this._messages.stage("Onboarding", "Saving initial manifest");
         yield* store.write("index.json", manifest);
         mark("manifest-start-write");
-        yield* this._messages.activity("Onboarding: governing taxonomy");
+        const governance = yield* this._messages.stage(
+          "Onboarding",
+          "Harvesting taxonomy candidates",
+        );
         yield* store.receipt(
           { kind: "run", id: runId },
           {
@@ -89,8 +101,18 @@ export class OnboardingService {
             skipped: inventory.skipped,
           },
         );
-        const taxonomy = yield* this._taxonomy.govern(inventory, store, rerunGovernance);
+        yield* Effect.yieldNow();
+        const taxonomy = yield* this._taxonomy.govern(
+          inventory,
+          store,
+          rerunGovernance,
+          governance,
+        );
         mark("taxonomy-governance");
+        yield* this._messages.stage(
+          "Onboarding",
+          `Classifying ${chunks.length} chunks (concurrency ${concurrency})`,
+        );
         const progress = yield* Effect.acquireRelease(
           Effect.sync(() =>
             this._messages.progress({
@@ -142,7 +164,7 @@ export class OnboardingService {
           { concurrency, discard: true },
         );
         mark("chunk-classification");
-        yield* this._messages.activity("Onboarding: saving manifest");
+        yield* this._messages.stage("Onboarding", "Saving final manifest");
         manifest.records.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
         manifest.state =
           manifest.failures.length || manifest.deferred.length ? "incomplete" : "complete";

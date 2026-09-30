@@ -4,6 +4,7 @@ import { Errors, type AppError } from "../errors/index.js";
 import { Configuration, ConfigurationService } from "../configuration/index.js";
 import { SelectionService } from "../configuration/selection.js";
 import { FileSystem, type FileSystemService } from "../filesystem/index.js";
+import type { ActivityHandle } from "../messages/types.js";
 import { CHUNKER_VERSION, MAX_CHUNK_BYTES, MAX_CHUNK_LINES, defaultPolicy } from "./consts.js";
 import { ResourceReader } from "./reader.js";
 import { linkCodeReferences } from "./syntax/utils.js";
@@ -25,6 +26,7 @@ export class InventoryService {
   public discover(
     rootArg: string,
     policy: DiscoveryPolicy = defaultPolicy,
+    activity?: ActivityHandle,
   ): Effect.Effect<Inventory, AppError> {
     return Effect.gen(this, function* () {
       const root = resolve(rootArg);
@@ -35,6 +37,7 @@ export class InventoryService {
         () => new SelectionService(this._fs, settings),
         "INVALID_ARGUMENT",
       );
+      activity?.update("Onboarding: preparing discovery rules and ignore files");
       yield* selection.prepare(root);
       const effectivePolicy = {
         ...policy,
@@ -55,8 +58,16 @@ export class InventoryService {
         inferenceCalls: 0,
         published: false,
       };
-      yield* this._visit(root, base, effectivePolicy, inventory, selection);
+      yield* this._visit(root, base, effectivePolicy, inventory, selection, activity);
+      activity?.update(
+        `Onboarding: linking code references across ${inventory.chunks.length} chunks`,
+      );
+      yield* Effect.yieldNow();
       linkCodeReferences(inventory.chunks);
+      activity?.update(
+        `Onboarding: linking document structure across ${inventory.chunks.length} chunks`,
+      );
+      yield* Effect.yieldNow();
       linkStructure(inventory.chunks);
       inventory.complete = inventory.failures.length === 0;
       return inventory;
@@ -68,9 +79,13 @@ export class InventoryService {
     policy: DiscoveryPolicy,
     inventory: Inventory,
     selection: SelectionService,
+    activity?: ActivityHandle,
   ): Effect.Effect<void, AppError> {
     const path = relative(base, file).split("\\").join("/") || ".";
     return Effect.gen(this, function* () {
+      activity?.update(
+        `Onboarding: discovering resources — ${inventory.resources.length} read, ${inventory.chunks.length} chunks, ${inventory.skipped.length} skipped, ${inventory.failures.length} failed`,
+      );
       const info = yield* this._fs.stat(file);
       const name = basename(file);
       if (info.isSymbolicLink()) {
@@ -89,7 +104,7 @@ export class InventoryService {
         }
         yield* selection.loadIgnore(file);
         for (const entry of (yield* this._fs.list(file)).sort())
-          yield* this._visit(join(file, entry), base, policy, inventory, selection);
+          yield* this._visit(join(file, entry), base, policy, inventory, selection, activity);
       } else if (info.isFile()) {
         if (
           policy.files.has(name.toLowerCase()) ||
@@ -129,5 +144,8 @@ export const InventoryLive = Layer.effect(
     return new InventoryService(yield* FileSystem, yield* Configuration);
   }),
 );
-export const discoverInventory = (root: string, policy = defaultPolicy) =>
-  Effect.flatMap(InventoryServiceTag, (service) => service.discover(root, policy));
+export const discoverInventory = (
+  root: string,
+  policy = defaultPolicy,
+  activity?: ActivityHandle,
+) => Effect.flatMap(InventoryServiceTag, (service) => service.discover(root, policy, activity));
