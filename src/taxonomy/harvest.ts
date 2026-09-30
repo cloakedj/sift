@@ -1,6 +1,7 @@
 import { extname } from "node:path";
+import { Effect } from "effect";
 import { Errors } from "../errors/index.js";
-import type { Inventory } from "../inventory/types.js";
+import type { Inventory, InventoryResource } from "../inventory/types.js";
 import { hash } from "../shared/utils.js";
 import { FRONT_MATTER_FIELDS, HARVEST_CONFIG, SOURCE_PRIORITY } from "./consts.js";
 import type { Candidate, CandidateSource, Evidence, Harvest, HarvestConfig } from "./types.js";
@@ -111,6 +112,269 @@ class FrontMatterParser {
   }
 }
 
+interface EvidencePosition {
+  startByte: number;
+  endByte: number;
+  startLine: number;
+  endLine: number;
+}
+
+class CandidateHarvester {
+  private readonly _map = new Map<string, Candidate>();
+  private readonly _excluded: Harvest["excluded"] = [];
+  private readonly _warnings: Harvest["warnings"] = [];
+  private readonly _texts: Map<string, string>;
+  public constructor(
+    private readonly _inventory: Inventory,
+    private readonly _config: HarvestConfig,
+  ) {
+    this._texts = resourceTexts(_inventory);
+  }
+  public run(): Harvest {
+    for (const resource of this._inventory.resources) this._resource(resource);
+    return this._finish();
+  }
+  /** Yield between line batches so interactive spinners and cancellation stay responsive. */
+  public runCooperative() {
+    return Effect.gen(this, function* () {
+      let linesSinceYield = 0;
+      for (const resource of this._inventory.resources) {
+        const text = this._texts.get(resource.id) ?? "";
+        const bodyStart = this._prepareResource(resource, text);
+        const markdown = this._isMarkdown(resource.path);
+        let offset = 0;
+        let byteOffset = 0;
+        let lineNumber = 1;
+        for (const line of text.split(/(?<=\n)/)) {
+          const result = this._line(
+            resource,
+            text,
+            line,
+            offset,
+            byteOffset,
+            lineNumber,
+            bodyStart,
+            markdown,
+          );
+          offset = result.offset;
+          byteOffset = result.byteOffset;
+          lineNumber = result.lineNumber;
+          linesSinceYield++;
+          if (linesSinceYield >= 100) {
+            linesSinceYield = 0;
+            yield* Effect.yieldNow();
+          }
+        }
+        yield* Effect.yieldNow();
+      }
+      return this._finish();
+    });
+  }
+  private _add(
+    resource: InventoryResource,
+    text: string,
+    value: string,
+    source: CandidateSource,
+    start?: number,
+    end?: number,
+    position?: EvidencePosition,
+  ) {
+    const name = normalizeLabel(value);
+    if (!name || !/\p{L}/u.test(name)) return;
+    if ([...name].length > this._config.maxLabelLength) {
+      if (!this._excluded.some((entry) => entry.name === name && entry.resourceId === resource.id))
+        this._excluded.push({
+          name,
+          resourceId: resource.id,
+          reason: "label exceeds code-point cap",
+        });
+      return;
+    }
+    const id = hash(name);
+    const candidate = this._map.get(id) ?? { id, name, evidence: [] };
+    if (candidate.evidence.some((e) => e.resourceId === resource.id && e.source === source)) return;
+    const evidence: Evidence = {
+      resourceId: resource.id,
+      resourceHash: resource.resourceHash,
+      source,
+      original: value,
+      snippet: [...(start === undefined ? value : text.slice(start, end))]
+        .slice(0, this._config.maxSnippetLength)
+        .join(""),
+    };
+    if (position) {
+      evidence.startByte = position.startByte;
+      evidence.endByte = position.endByte;
+      evidence.startLine = position.startLine;
+      evidence.endLine = position.endLine;
+    } else if (start !== undefined && end !== undefined) {
+      evidence.startByte = Buffer.byteLength(text.slice(0, start));
+      evidence.endByte = Buffer.byteLength(text.slice(0, end));
+      evidence.startLine = text.slice(0, start).split("\n").length;
+      evidence.endLine = text
+        .slice(0, Math.max(start, end - (text[end - 1] === "\n" ? 1 : 0)))
+        .split("\n").length;
+    }
+    candidate.evidence.push(evidence);
+    this._map.set(id, candidate);
+  }
+  private _resource(resource: InventoryResource) {
+    const text = this._texts.get(resource.id) ?? "";
+    const bodyStart = this._prepareResource(resource, text);
+    const markdown = this._isMarkdown(resource.path);
+    let offset = 0;
+    let byteOffset = 0;
+    let lineNumber = 1;
+    for (const line of text.split(/(?<=\n)/)) {
+      const result = this._line(
+        resource,
+        text,
+        line,
+        offset,
+        byteOffset,
+        lineNumber,
+        bodyStart,
+        markdown,
+      );
+      offset = result.offset;
+      byteOffset = result.byteOffset;
+      lineNumber = result.lineNumber;
+    }
+  }
+  private _prepareResource(resource: InventoryResource, text: string) {
+    for (const segment of resource.path.split(/[/.]+/))
+      for (const form of identifierForms(segment)) this._add(resource, text, form, "path");
+    let bodyStart = 0;
+    if ([".md", ".mdx"].includes(extname(resource.path).toLowerCase())) {
+      try {
+        const metadata = new FrontMatterParser().parse(text, this._config.maxFrontMatterBytes);
+        bodyStart = metadata.end;
+        for (const item of metadata.values)
+          this._add(resource, text, item.value, "frontMatter", item.start, item.end);
+      } catch (cause) {
+        const error = Errors.normalize(cause, "FRONT_MATTER");
+        this._warnings.push({
+          path: resource.path,
+          message: `Front matter ignored: ${error.message}`,
+          details: Errors.serialize(error),
+        });
+      }
+    }
+    return bodyStart;
+  }
+  private _isMarkdown(path: string) {
+    return [".md", ".mdx", ".markdown"].includes(extname(path).toLowerCase());
+  }
+  private _line(
+    resource: InventoryResource,
+    text: string,
+    line: string,
+    offset: number,
+    byteOffset: number,
+    lineNumber: number,
+    bodyStart: number,
+    markdown: boolean,
+  ) {
+    const next = {
+      offset: offset + line.length,
+      byteOffset: byteOffset + Buffer.byteLength(line),
+      lineNumber: lineNumber + (line.endsWith("\n") ? 1 : 0),
+    };
+    if (offset < bodyStart) return next;
+    const linePosition = (start: number, end: number): EvidencePosition => ({
+      startByte: byteOffset + Buffer.byteLength(line.slice(0, start)),
+      endByte: byteOffset + Buffer.byteLength(line.slice(0, end)),
+      startLine: lineNumber,
+      endLine: lineNumber,
+    });
+    const heading = markdown ? /^ {0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$/.exec(line) : null;
+    if (heading)
+      this._add(resource, text, heading[1]!, "heading", offset, offset + line.length, {
+        startByte: byteOffset,
+        endByte: next.byteOffset,
+        startLine: lineNumber,
+        endLine: lineNumber,
+      });
+    for (const match of line.matchAll(/[\p{L}_$][\p{L}\p{N}_$]*/gu)) {
+      if (/[A-Z_$]/.test(match[0]) || /\p{Ll}\p{Lu}/u.test(match[0]))
+        for (const form of identifierForms(match[0]))
+          this._add(
+            resource,
+            text,
+            form,
+            "identifier",
+            offset + match.index!,
+            offset + match.index! + match[0].length,
+            linePosition(match.index!, match.index! + match[0].length),
+          );
+    }
+    if (!heading) {
+      for (const sentence of line.matchAll(/[^.!?。！？\n]+/gu)) {
+        const words = [...sentence[0].matchAll(/[\p{L}\p{N}]+/gu)];
+        for (let i = 0; i < words.length; i++)
+          for (let count = 1; count <= 3 && i + count <= words.length; count++) {
+            const first = words[i]!;
+            const last = words[i + count - 1]!;
+            const start = sentence.index! + first.index!;
+            const end = sentence.index! + last.index! + last[0].length;
+            this._add(
+              resource,
+              text,
+              words
+                .slice(i, i + count)
+                .map((word) => word[0])
+                .join(" "),
+              "body",
+              offset + start,
+              offset + end,
+              linePosition(start, end),
+            );
+          }
+      }
+    }
+    return next;
+  }
+  private _finish(): Harvest {
+    const candidates = [...this._map.values()].sort((a, b) => compareText(a.name, b.name));
+    const frequencies = new Map(
+      candidates.map((candidate) => [
+        candidate.id,
+        new Set(candidate.evidence.map((e) => e.resourceId)).size,
+      ]),
+    );
+    const byResourceSource = new Map<string, Candidate[]>();
+    for (const candidate of candidates)
+      for (const evidence of candidate.evidence) {
+        const key = `${evidence.resourceId}\0${evidence.source}`;
+        const pool = byResourceSource.get(key) ?? [];
+        pool.push(candidate);
+        byResourceSource.set(key, pool);
+      }
+    const eligible = new Set<string>();
+    for (const resource of this._inventory.resources)
+      for (const source of SOURCE_PRIORITY) {
+        const pool = byResourceSource.get(`${resource.id}\0${source}`) ?? [];
+        pool.sort(
+          (a, b) => frequencies.get(b.id)! - frequencies.get(a.id)! || compareText(a.name, b.name),
+        );
+        for (const candidate of pool.slice(0, this._config.perResource[source]))
+          eligible.add(candidate.id);
+      }
+    const selected = selectCandidates(
+      candidates.filter((c) => eligible.has(c.id)),
+      this._config,
+    );
+    const selectedSet = new Set(selected);
+    return {
+      candidates,
+      selected,
+      overflow: candidates.filter((c) => !selectedSet.has(c.id)).map((c) => c.id),
+      excluded: this._excluded,
+      warnings: this._warnings,
+    };
+  }
+}
+
 /**
  * Collect source-linked candidates without treating them as approved labels.
  * Apply per-source budgets and rare-label reservation while retaining overflow
@@ -120,133 +384,12 @@ export function harvestCandidates(
   inventory: Inventory,
   config: HarvestConfig = HARVEST_CONFIG,
 ): Harvest {
-  const map = new Map<string, Candidate>();
-  const excluded: Harvest["excluded"] = [];
-  const warnings: Harvest["warnings"] = [];
-  const texts = resourceTexts(inventory);
-  for (const resource of inventory.resources) {
-    const text = texts.get(resource.id) ?? "";
-    const add = (value: string, source: CandidateSource, start?: number, end?: number) => {
-      const name = normalizeLabel(value);
-      if (!name || !/\p{L}/u.test(name)) return;
-      if ([...name].length > config.maxLabelLength) {
-        if (!excluded.some((entry) => entry.name === name && entry.resourceId === resource.id))
-          excluded.push({ name, resourceId: resource.id, reason: "label exceeds code-point cap" });
-        return;
-      }
-      const id = hash(name);
-      const candidate = map.get(id) ?? { id, name, evidence: [] };
-      if (candidate.evidence.some((e) => e.resourceId === resource.id && e.source === source))
-        return;
-      const evidence: Evidence = {
-        resourceId: resource.id,
-        resourceHash: resource.resourceHash,
-        source,
-        original: value,
-        snippet: [...(start === undefined ? value : text.slice(start, end))]
-          .slice(0, config.maxSnippetLength)
-          .join(""),
-      };
-      if (start !== undefined && end !== undefined) {
-        evidence.startByte = Buffer.byteLength(text.slice(0, start));
-        evidence.endByte = Buffer.byteLength(text.slice(0, end));
-        evidence.startLine = text.slice(0, start).split("\n").length;
-        evidence.endLine = text
-          .slice(0, Math.max(start, end - (text[end - 1] === "\n" ? 1 : 0)))
-          .split("\n").length;
-      }
-      candidate.evidence.push(evidence);
-      map.set(id, candidate);
-    };
-    for (const segment of resource.path.split(/[/.]+/))
-      for (const form of identifierForms(segment)) add(form, "path");
-    let bodyStart = 0;
-    if ([".md", ".mdx"].includes(extname(resource.path).toLowerCase())) {
-      try {
-        const metadata = new FrontMatterParser().parse(text, config.maxFrontMatterBytes);
-        bodyStart = metadata.end;
-        for (const item of metadata.values) add(item.value, "frontMatter", item.start, item.end);
-      } catch (cause) {
-        const error = Errors.normalize(cause, "FRONT_MATTER");
-        warnings.push({
-          path: resource.path,
-          message: `Front matter ignored: ${error.message}`,
-          details: Errors.serialize(error),
-        });
-      }
-    }
-    const markdown = [".md", ".mdx", ".markdown"].includes(extname(resource.path).toLowerCase());
-    let offset = 0;
-    for (const line of text.split(/(?<=\n)/)) {
-      if (offset < bodyStart) {
-        offset += line.length;
-        continue;
-      }
-      const heading = markdown ? /^ {0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$/.exec(line) : null;
-      if (heading) add(heading[1]!, "heading", offset, offset + line.length);
-      for (const match of line.matchAll(/[\p{L}_$][\p{L}\p{N}_$]*/gu)) {
-        if (/[A-Z_$]/.test(match[0]) || /\p{Ll}\p{Lu}/u.test(match[0]))
-          for (const form of identifierForms(match[0]))
-            add(form, "identifier", offset + match.index!, offset + match.index! + match[0].length);
-      }
-      if (!heading) {
-        for (const sentence of line.matchAll(/[^.!?。！？\n]+/gu)) {
-          const words = [...sentence[0].matchAll(/[\p{L}\p{N}]+/gu)];
-          for (let i = 0; i < words.length; i++)
-            for (let count = 1; count <= 3 && i + count <= words.length; count++) {
-              const first = words[i]!;
-              const last = words[i + count - 1]!;
-              const start = offset + sentence.index! + first.index!;
-              const end = offset + sentence.index! + last.index! + last[0].length;
-              add(
-                words
-                  .slice(i, i + count)
-                  .map((word) => word[0])
-                  .join(" "),
-                "body",
-                start,
-                end,
-              );
-            }
-        }
-      }
-      offset += line.length;
-    }
-  }
-  const candidates = [...map.values()].sort((a, b) => compareText(a.name, b.name));
-  const frequencies = new Map(
-    candidates.map((candidate) => [
-      candidate.id,
-      new Set(candidate.evidence.map((e) => e.resourceId)).size,
-    ]),
-  );
-  const byResourceSource = new Map<string, Candidate[]>();
-  for (const candidate of candidates)
-    for (const evidence of candidate.evidence) {
-      const key = `${evidence.resourceId}\0${evidence.source}`;
-      const pool = byResourceSource.get(key) ?? [];
-      pool.push(candidate);
-      byResourceSource.set(key, pool);
-    }
-  const eligible = new Set<string>();
-  for (const resource of inventory.resources)
-    for (const source of SOURCE_PRIORITY) {
-      const pool = byResourceSource.get(`${resource.id}\0${source}`) ?? [];
-      pool.sort(
-        (a, b) => frequencies.get(b.id)! - frequencies.get(a.id)! || compareText(a.name, b.name),
-      );
-      for (const candidate of pool.slice(0, config.perResource[source])) eligible.add(candidate.id);
-    }
-  const selected = selectCandidates(
-    candidates.filter((c) => eligible.has(c.id)),
-    config,
-  );
-  const selectedSet = new Set(selected);
-  return {
-    candidates,
-    selected,
-    overflow: candidates.filter((c) => !selectedSet.has(c.id)).map((c) => c.id),
-    excluded,
-    warnings,
-  };
+  return new CandidateHarvester(inventory, config).run();
+}
+
+export function harvestCandidatesCooperative(
+  inventory: Inventory,
+  config: HarvestConfig = HARVEST_CONFIG,
+) {
+  return new CandidateHarvester(inventory, config).runCooperative();
 }

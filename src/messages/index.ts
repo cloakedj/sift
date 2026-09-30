@@ -68,16 +68,42 @@ class CliProgressHandle implements ProgressHandle {
 }
 
 class SpinnerHandle implements ActivityHandle {
-  private readonly _spinner: Ora | undefined;
-  public constructor(text: string, enabled: boolean) {
-    if (enabled) this._spinner = ora({ text, stream: process.stderr, discardStdin: false }).start();
+  private readonly _spinner: Ora;
+  public constructor(text: string) {
+    this._spinner = ora({ text, stream: process.stderr, discardStdin: false }).start();
   }
   public update(text: string): void {
-    if (this._spinner) this._spinner.text = text;
+    this._spinner.text = text;
   }
   public stop(): void {
-    this._spinner?.stop();
+    this._spinner.stop();
   }
+}
+
+class ReportingActivityHandle implements ActivityHandle {
+  private _lastText = "";
+  private _lastReported = 0;
+  public constructor(
+    private readonly _sink: MessageSink,
+    private readonly _diagnostic: boolean,
+  ) {}
+  public update(text: string): void {
+    const now = Date.now();
+    if (text === this._lastText || (this._lastReported && now - this._lastReported < 1000)) return;
+    this._lastText = text;
+    this._lastReported = now;
+    const match = /^(.*?):\s+(.+)$/.exec(text);
+    this._sink.message(
+      {
+        label: match?.[1] ?? "Activity",
+        level: "info",
+        text: match?.[2] ?? text,
+        tags: ["progress"],
+      },
+      this._diagnostic,
+    );
+  }
+  public stop(): void {}
 }
 
 class DelayedSpinnerHandle implements ActivityHandle {
@@ -161,9 +187,11 @@ export class MessageService {
     );
   }
   /** Replace the current display; scoped callers stop their own handle on exit. */
-  public spinner(text: string): ActivityHandle {
+  public spinner(_text: string): ActivityHandle {
     this._active?.stop();
-    const handle = new SpinnerHandle(text, this._enableProgress);
+    const handle = this._enableProgress
+      ? new SpinnerHandle(_text)
+      : new ReportingActivityHandle(this._sink, this._diagnosticsToStderr);
     this._active = handle;
     return handle;
   }

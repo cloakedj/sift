@@ -14,7 +14,7 @@ import {
   HARVEST_CONFIG,
   HARVEST_VERSION,
 } from "./consts.js";
-import { harvestCandidates } from "./harvest.js";
+import { harvestCandidatesCooperative } from "./harvest.js";
 import type { Candidate, Dimension, Judgment, TaxonomySnapshot } from "./types.js";
 import { compareText } from "./utils.js";
 
@@ -25,9 +25,9 @@ class GovernanceRun {
     inventory: Inventory,
     private readonly _jev: JevService,
     private readonly _store: LocalStore,
+    harvest: TaxonomySnapshot["harvest"],
     private readonly _activity?: ActivityHandle,
   ) {
-    const harvest = harvestCandidates(inventory);
     this._snapshot = {
       schemaVersion: 1,
       version: "",
@@ -236,8 +236,9 @@ export class TaxonomyService {
         `Onboarding: harvesting taxonomy candidates from ${inventory.resources.length} resources`,
       );
       yield* Effect.yieldNow();
+      const harvest = yield* harvestCandidatesCooperative(inventory);
       const run = yield* Errors.attempt(
-        () => new GovernanceRun(inventory, this._jev, store, activity),
+        () => new GovernanceRun(inventory, this._jev, store, harvest, activity),
         "INVALID_DATA",
       );
       return yield* run.run(rerun);
