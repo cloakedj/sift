@@ -24,11 +24,49 @@ The result is not a chatbot answer engine. Sift supplies the relevant, source-ba
 
 The name reflects the job: separate useful semantic signal from repository noise. The project is not tied to a specific classifier model; it can sift with Jev, embeddings, lexical discovery, or future retrieval strategies.
 
+## Cloudflare setup
+
+Sift's current semantic retrieval path is cloud-backed. It stores source records locally, but uses Cloudflare for the vector side:
+
+- **Workers AI** generates 768-dimensional embeddings with the pinned `@cf/baai/bge-base-en-v1.5` model.
+- **Vectorize** stores those embeddings and performs nearest-neighbor retrieval.
+
+Create or reuse a Vectorize index with 768 dimensions and cosine distance:
+
+```sh
+npx wrangler login
+npx wrangler vectorize create sift --dimensions=768 --metric=cosine
+export CLOUDFLARE_VECTORIZE_INDEX=sift
+```
+
+If Wrangler cannot infer the account, also set:
+
+```sh
+export CLOUDFLARE_ACCOUNT_ID=<account-id>
+```
+
+Alternatively, set `CLOUDFLARE_API_TOKEN` with access to Workers AI and Vectorize.
+
+Then publish vectors before semantic search:
+
+```sh
+npm run cli -- onboard .
+npm run cli -- publish --root .
+npm run cli -- search "how does retrieval work?" --root .
+```
+
+`search` requires a complete current publication. Cached Jev intent can reduce model calls, but query embedding and vector lookup still use Cloudflare in the current implementation.
+
+## Can Cloudflare be replaced?
+
+Yes in the design, but not yet by configuration alone. Sift treats the embedding provider and vector backend as replaceable responsibilities: produce compatible vectors, persist them, query them, and prove the active publication is complete and current. The present implementation ships one concrete backend: Workers AI plus Vectorize.
+
+Replacing Cloudflare would require another publication/retrieval adapter that preserves the same contracts: embedding-space identity, dimensions and metric checks, namespace or generation isolation, metadata validation, stale-source detection, resumable publication, and source-linked result validation.
+
 ## Development
 
 ```sh
 npm install
-npm run cli -- search "how does retrieval work?" --root .
 npm run test
 ```
 
