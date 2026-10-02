@@ -1,4 +1,13 @@
-import type { Questions, SystemOneResult } from "@typesafe-ai/sdk";
+import type { Questions, SystemOneRequest, SystemOneResult } from "@typesafe-ai/sdk";
+
+export interface AssessmentTrace {
+  candidateId: string;
+  contextIds: string[];
+  cache: "reused" | "new";
+  usage: { inputTokens: number | null; outputTokens: number | null };
+  request: SystemOneRequest<Questions>;
+  judgment: RelevanceJudgment;
+}
 
 export interface JudgmentCache {
   schemaVersion: 1;

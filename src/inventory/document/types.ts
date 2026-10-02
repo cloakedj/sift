@@ -5,7 +5,7 @@ export interface DocumentRegion {
   end: number;
   line: number;
   endLine: number;
-  kind: "section" | "paragraph" | "fenced-block";
+  kind: "section" | "paragraph" | "fenced-block" | "passage";
   label?: string;
   depth?: number;
   parent?: DocumentRegion;
@@ -16,4 +16,5 @@ export interface DocumentPiece {
   start: number;
   end: number;
   line: number;
+  endLine: number;
 }

@@ -24,6 +24,8 @@ export class SearchCommand extends CorpusCommand {
               "min-relevance": { type: "string" },
               explain: { type: "boolean" },
               rerank: { type: "boolean" },
+              diversify: { type: "boolean" },
+              "trace-chunk": { type: "string", multiple: true },
               "semantic-only": { type: "boolean" },
               anchor: { type: "string", multiple: true },
               "top-k": { type: "string" },
@@ -36,6 +38,16 @@ export class SearchCommand extends CorpusCommand {
           "INVALID_ARGUMENT",
           "--agent requires --json and retrieval, not --show-intent",
         );
+      if (values["trace-chunk"] && (!values.json || !values.explain || values.agent))
+        return yield* Errors.fail(
+          "INVALID_ARGUMENT",
+          "--trace-chunk requires full --explain --json output; omit --agent",
+        );
+      if (values.diversify && (!values.rerank || values["semantic-only"]))
+        return yield* Errors.fail(
+          "INVALID_ARGUMENT",
+          "--diversify requires --rerank and hybrid discovery",
+        );
       if (
         values["show-intent"] &&
         (values.explain ||
@@ -43,11 +55,13 @@ export class SearchCommand extends CorpusCommand {
           values.rerank ||
           values["semantic-only"] ||
           values.anchor ||
+          values.diversify ||
+          values["trace-chunk"] ||
           values["min-relevance"] !== undefined)
       )
         return yield* Errors.fail(
           "INVALID_ARGUMENT",
-          "--explain, --top-k, --rerank, --min-relevance, --semantic-only and --anchor require retrieval, not --show-intent",
+          "--explain, --top-k, --rerank, --min-relevance, --semantic-only, --anchor, --diversify and --trace-chunk require retrieval, not --show-intent",
         );
       const topK =
         values["top-k"] === undefined
@@ -66,6 +80,8 @@ export class SearchCommand extends CorpusCommand {
                 discovery: values["semantic-only"] ? "semantic" : "hybrid",
                 anchors: values.anchor?.map((value) => ({ kind: "literal" as const, value })),
                 rerank: values.rerank,
+                shortlist: values.diversify ? "diversified" : undefined,
+                traceChunks: values["trace-chunk"],
                 minRelevance:
                   values["min-relevance"] === undefined
                     ? undefined

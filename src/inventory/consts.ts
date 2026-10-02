@@ -1,6 +1,6 @@
 import type { DiscoveryPolicy } from "./types.js";
 
-export const CHUNKER_VERSION = "structure-v3";
+export const CHUNKER_VERSION = "structure-v4";
 export const MAX_STRUCTURE_BYTES = 1024 * 1024;
 export const MAX_CHUNK_BYTES = 8192;
 export const MAX_CHUNK_LINES = 48;

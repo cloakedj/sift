@@ -2,7 +2,7 @@
 
 ## Source boundaries and identity
 
-The `structure-v3` chunker shares a source-neutral unit/relationship contract across
+The `structure-v4` chunker shares a source-neutral unit/relationship contract across
 code and prose. Source structure is distinct from Jev classifications/relevance
 judgments and from the indexes used to discover candidates. These are logical
 boundaries, not separate databases or a persisted summary tree.
@@ -21,17 +21,35 @@ independent source units. Unsupported languages, invalid syntax, files larger
 than 1 MiB, and declaration-free code retain bounded streaming windows. The record's
 `resource.structure.mode` distinguishes `syntax`, `document`, and `bounded` extraction.
 
-For Markdown, ATX headings define nested sections; paragraphs and fenced blocks are
-child units. Fences are opaque to heading/paragraph detection. Plain `.txt` and `.rst`
-use paragraphs without guessing heading syntax. This is not a complete Markdown/RST
-parser: Setext headings, document-link resolution, and semantic cross-document
-associations are not extracted. Explicit document-link provenance is reserved in
-the relationship contract, not claimed as a current extractor capability.
+For Markdown, ATX headings define nested sections. A heading stays with its first
+direct body passage rather than becoming a separate heading-only chunk. Later
+paragraphs/fences remain child units. Adjacent introductory labels ending in a
+colon join lists; fences join their immediate explanatory paragraphs when the
+entire group fits the existing byte/line caps. Grouped non-section units have kind
+`passage`. These are source-structure heuristics, not semantic relevance judgments.
+Grouping never crosses a heading. Sections with no direct body retain their own
+headings, including containers immediately followed by a subsection.
+
+Fences are opaque to heading/paragraph detection, including blank lines and heading
+markers inside examples. Oversized first passages split with the heading attached
+to the initial piece where caps permit; oversized later fences stay separate with
+bounded continuation/adjacency links rather than forcing unlimited grouping.
+Labels preserve the full outer-to-inner heading path, including literal
+historical/proposal labels when present. Individual ancestor source units retain
+their own labels and ranges; no document authority is inferred from path/date.
+
+Plain `.txt` and `.rst` still use paragraphs without guessing heading syntax or
+Markdown passage grouping. This is not a complete Markdown/RST parser: Setext
+headings, document-link resolution, and semantic cross-document associations are
+not extracted. Explicit document-link provenance is reserved in the relationship
+contract, not claimed as a current extractor capability.
 
 The 8192-byte and 48-line limits remain safety caps. Oversized declarations and
 paragraphs split into ordered pieces while preserving their owning unit's identity.
-A class owns header/footer pieces; a section owns its heading. Both can contain
-child units without copying their full bodies into every chunk.
+A class owns header/footer pieces; a section owns its heading and initial direct
+passage. Both can contain child units without copying their full bodies into every
+chunk. Grouping retains contiguous original byte slices without duplication;
+UTF-8 characters and CRLF pairs are not split at document byte cutoffs.
 
 Structured chunks store:
 
@@ -114,14 +132,41 @@ thresholds, or provider work:
 npm run --silent cli -- search 'How does onboarding persist failures?' --root src/onboarding --rerank --top-k 5 --agent --json
 ```
 
-`--agent` requires `--json` and cannot be combined with `--show-intent`. It returns
-paths, inclusive source line ranges, symbols, relevance scores when assessed, and
-previews capped at 1200 UTF-16 code units per primary/supporting chunk. A
-`previewTruncated` flag explicitly marks clipped previews; source ranges still
-refer to the full chunk. Consumers should read those ranges for verification.
+`--agent` requires `--json` and cannot be combined with `--show-intent`. Agent
+schema **2** returns paths, symbols, relevance scores when assessed, and numbered
+source previews for primary results, supporting context and diagnostic candidates:
+
+```text
+31 |       const path = join(inventory.root, ".sift", INDEX_FILE);
+32 |       yield* this._fs.mkdir(join(inventory.root, ".sift"));
+```
+
+Numbers are original one-based source lines, not excerpt-relative offsets. The
+preview retains source whitespace and LF/CRLF endings; a trailing newline does
+not invent an extra numbered line. Line prefixes are presentation, not source.
+
+- Top-level `startLine`/`endLine` and `startByte`/`endByte` address the **full chunk**.
+- `previewRange` addresses only the **displayed source prefix**, excluding numbering;
+  it is `null` for empty text. Lines are inclusive; UTF-8 bytes are zero-based,
+  half-open in both ranges.
+- The budget is 1200 source UTF-16 code units before adding numbering. Clipping
+  never splits a surrogate pair or CRLF pair. `previewTruncated` explicitly marks
+  omitted chunk text; `previewClippedMidLine` says the presentation cutoff falls
+  before the end of a line. Neither flag claims the chunk itself contains complete
+  source lines: syntax and oversized-chunk boundaries can be mid-line.
+- Cite visible evidence using its numbered lines without rereading the same file.
+  If a required fact is clipped, read the missing range, including the last shown
+  line when clipped mid-line. The full chunk end is not the displayed excerpt end.
+
+Schema 1 consumers must update: `preview` now contains line prefixes rather than
+raw text. The full non-agent report remains schema 1 and unchanged. No second raw
+copy of the excerpt is included in agent output. Numbering/range metadata adds
+output bytes; avoided rereads or token savings require separate measurement.
 Taxonomy, full provenance, publication backend details, and timings are omitted.
 Evidence status, bounded coverage, candidate/result truncation, budgets, findings,
-and supporting-context relationships remain visible.
+individual relevance scores and supporting-context relationships remain visible.
+Repeated excerpts are not suppressed or merged: accepted results, diagnostic
+candidates and context relationships retain their separate meanings.
 
 `--agent --explain --json` additionally exposes compact diagnostic candidates and
 judgment counts. Candidates are separate from accepted results. Explain does not
@@ -139,6 +184,22 @@ offered to the user. Explicit user budgets still apply. Adjacent ranges should b
 combined into one source read; individual ranked chunks remain distinct in the output
 to preserve their scores and acceptance semantics. These are cost-control policies,
 not measured quality guarantees.
+
+## Opt-in shortlist diagnostics and diversification
+
+Default discovery and assessment policy are unchanged. Full `--explain --json`
+can trace up to eight known chunk IDs with repeatable `--trace-chunk <id>`:
+publication presence, discovery/pool/shortlist loss, context eligibility and
+judgments, exact assessment inputs, embedding collisions and output cutoff.
+This is source-bearing diagnostic output, incompatible with compact `--agent`;
+tracing adds no judgments and never turns a provider failure into abstention.
+
+`--diversify` is an explicitly labeled hybrid reranking experiment. It admits a
+bounded larger local lexical pool and favors less-represented files/units, while
+preserving anchors, repeat eligibility, the eight-primary assessment cap and
+existing context/acceptance limits. It is off by default, not a completeness or
+authority score. See [diagnostics, limitations and local checks](evaluation/bounded-coverage.md)
+before comparing conditions; no live quality improvement is yet established.
 
 ## Bounded evidence expansion
 
@@ -199,8 +260,9 @@ regressions do not establish a measured improvement over that baseline.
 
 ## Migration
 
-Old chunk identities/publications are not current under the new chunker. Re-onboard
-and republish each corpus; projection-only repair is not a substitute for rechunking:
+`structure-v4` changes the shared chunker version, so all chunk identities (including
+code/fallback identities) and old publications must be refreshed. Re-onboard and
+republish each corpus; projection-only repair is not a substitute for rechunking:
 
 ```sh
 npm run cli -- onboard src/lexical
@@ -210,7 +272,14 @@ CLOUDFLARE_VECTORIZE_INDEX=jev-checkpoint npm run cli -- publish --root src/lexi
 This incurs real classification/embedding work. Old generations remain inactive;
 this change does not delete unrelated remote vectors.
 
-## Current direct checks: mixed sources and Jev
+## Current local checks: structure-v4
+
+[Fixed-source document validation](evaluation/chunk-boundaries.md) checks exact
+ranges, hierarchy, grouping, continuations and deterministic identities. The saved
+real-service reports below predate v4 and do **not** validate its retrieval quality.
+Re-onboarding, republication and a new-generation comparison are required.
+
+## Historical direct checks: structure-v3 mixed sources and Jev
 
 Before adding regression tests, the product CLI inventoried a temporary mixed corpus
 containing a Markdown policy, TypeScript refund helper, and long Unicode plain text:

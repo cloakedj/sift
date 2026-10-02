@@ -198,7 +198,12 @@ test("partial limit, exclusive lock, and model changes invalidate reuse", async 
     const resumed = await onboard(root, fake.client);
     assert.equal(resumed.manifest.reused, 1);
     assert.equal(resumed.manifest.classified, 2);
-    await writeFile(join(root, ".sift", "onboarding.lock"), "locked");
+    const staleLock = JSON.stringify({
+      pid: 2147483647,
+      runId: "stale",
+      createdAt: new Date().toISOString(),
+    });
+    await writeFile(join(root, ".sift", "onboarding.lock"), staleLock);
     await assert.rejects(onboard(root, fake.client), /locked/);
     const unlocked = await onboard(root, fake.client, { resume: true });
     assert.equal(unlocked.manifest.reused, 3);

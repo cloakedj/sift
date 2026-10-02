@@ -149,7 +149,7 @@ test("code windows overlap, documents respect paragraphs and headings, empty fil
     );
     assert.deepEqual(
       result.chunks.filter((c) => c.path === "doc.md").map((c) => c.text),
-      ["# First\n\n", "Paragraph one.\n\n", "# Second\n", "Paragraph two.\n"],
+      ["# First\n\nParagraph one.\n\n", "# Second\nParagraph two.\n"],
     );
     assert.equal(result.resources.find((r) => r.path === "empty.txt")!.chunkCount, 0);
   }));

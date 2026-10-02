@@ -15,4 +15,5 @@ export const CORPUS_STRING_OPTIONS = [
   "min-relevance",
   "top-k",
   "anchor",
+  "trace-chunk",
 ] as const;

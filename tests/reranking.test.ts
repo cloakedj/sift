@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
-import { RELEVANCE_CRITERIA } from "../src/retrieval/reranking/consts.js";
-import { requestFingerprint } from "../src/retrieval/reranking/utils.js";
+import { QUESTION_SET_VERSION, RELEVANCE_CRITERIA } from "../src/retrieval/reranking/consts.js";
+import {
+  reportedTokenCount,
+  reportedUsage,
+  requestFingerprint,
+} from "../src/retrieval/reranking/utils.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
@@ -24,6 +28,18 @@ test("reranking fingerprints include rubric text and explicit version", () => {
     requestFingerprint(request, "v1"),
     requestFingerprint(structuredClone(request), "v1"),
   );
+});
+
+test("missing or invalid reported usage is unknown, not zero", () => {
+  for (const value of [undefined, null, NaN, Infinity, -1, 0.5, "1"])
+    assert.equal(reportedTokenCount(value), null);
+  assert.equal(reportedTokenCount(0), 0);
+  assert.equal(reportedTokenCount(12), 12);
+  assert.deepEqual(reportedUsage({ input_tokens: 12, output_tokens: 0, rawBody: "discard" }), {
+    inputTokens: 12,
+    outputTokens: 0,
+  });
+  assert.deepEqual(reportedUsage("unexpected"), { inputTokens: null, outputTokens: null });
 });
 
 const intent: QueryIntent = {
@@ -70,9 +86,11 @@ test("reranking judges full current source, reorders tied vectors, and fails clo
     let calls = 0;
     let active = 0;
     let peakActive = 0;
+    const requests: unknown[] = [];
     const transport: JevClient = {
       model: intent.provenance.model,
       async evaluate(request) {
+        requests.push(structuredClone(request));
         calls++;
         active++;
         peakActive = Math.max(peakActive, active);
@@ -100,13 +118,32 @@ test("reranking judges full current source, reorders tied vectors, and fails clo
         };
       },
     };
-    const rank = (client = transport, selected = candidates, queryIntent = intent) =>
+    const rank = (
+      client = transport,
+      selected = candidates,
+      queryIntent = intent,
+      traceChunks: string[] = [],
+    ) =>
       Effect.runPromise(
         Effect.flatMap(Reranking, (service) =>
-          service.rank(root, queryIntent, selected, new JevService(client, false)),
+          service.rank(root, queryIntent, selected, new JevService(client, false), traceChunks),
         ).pipe(Effect.provide(RerankingLive), Effect.provide(LocalRuntimeLive)),
       );
-    const first = await rank();
+    const traceId = candidates[0]!.record.id;
+    const first = await rank(transport, candidates, intent, [traceId]);
+    assert.equal(first.traces?.length, 1);
+    const trace = first.traces![0]!;
+    assert.equal(trace.candidateId, traceId);
+    assert.equal(trace.cache, "new");
+    assert.deepEqual(trace.usage, { inputTokens: 1, outputTokens: 1 });
+    assert.deepEqual(trace.contextIds, []);
+    assert.ok(
+      requests.some((request) => JSON.stringify(request) === JSON.stringify(trace.request)),
+    );
+    assert.equal(
+      requestFingerprint(trace.request, QUESTION_SET_VERSION),
+      trace.judgment.fingerprint,
+    );
     const ranked = first.results;
     assert.deepEqual(first.judgments, { reused: 0, new: candidates.length });
     assert.equal(calls, candidates.length);
@@ -115,7 +152,11 @@ test("reranking judges full current source, reorders tied vectors, and fails clo
     assert.equal(ranked[1]!.relevance!.score, 0);
     assert.equal(ranked[0]!.score, 0.5);
     assert.equal(ranked[0]!.rank, 1);
-    const repeat = await rank();
+    const repeat = await rank(transport, candidates, intent, [traceId]);
+    assert.equal(repeat.traces![0]!.cache, "reused");
+    assert.deepEqual(repeat.traces![0]!.usage, { inputTokens: null, outputTokens: null });
+    assert.deepEqual(repeat.traces![0]!.request, trace.request);
+    assert.equal((await rank()).traces, undefined);
     assert.equal(repeat.results[0]!.relevance!.fingerprint, ranked[0]!.relevance!.fingerprint);
     assert.deepEqual(repeat.judgments, { reused: candidates.length, new: 0 });
     assert.equal(calls, candidates.length);
@@ -198,7 +239,12 @@ test("reranking judges full current source, reorders tied vectors, and fails clo
         },
       },
       withContext,
+      intent,
+      [ranked[0]!.record.id],
     );
+    assert.equal(contextual.traces?.length, 1);
+    assert.equal(contextual.traces![0]!.candidateId, ranked[1]!.record.id);
+    assert.deepEqual(contextual.traces![0]!.contextIds, [ranked[0]!.record.id]);
     assert.notEqual(
       contextual.results[0]!.relevance!.fingerprint,
       ranked[1]!.relevance!.fingerprint,

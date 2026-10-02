@@ -37,7 +37,7 @@ Options:
 - `--dry-run`: inventory selected resources and chunks only; no model calls, writes, or publication. JSON includes the resolved config and skipped paths/reasons. Configured onboarding settings are ignored in this mode.
 - `--limit <chunks>`: process at most this many chunks; the remainder are deferred, leaving incomplete onboarding.
 - `--concurrency <n>`: positive integer classification concurrency.
-- `--resume`: remove an existing `.sift/onboarding.lock` before starting semantic onboarding. Use only after verifying no Sift writer is still active.
+- `--resume`: remove an existing `.sift/onboarding.lock` only when its recorded writer process is known to have stopped; live or unverifiable locks fail closed.
 - `--rerun-governance`: rerun taxonomy governance during semantic onboarding.
 - `--no-rerun-governance`: override a configured `rerunGovernance: true`.
 - `--json`: emit the manifest or inventory as JSON.
@@ -99,7 +99,7 @@ This checks local publication completeness and recorded visibility. It does not 
 Run semantic retrieval against the active publication.
 
 ```sh
-npm run cli -- search <query> [--root <path>] [--top-k <n>] [--anchor <literal>] [--semantic-only] [--rerank] [--min-relevance <0..1>] [--explain] [--agent --json] [--json]
+npm run cli -- search <query> [--root <path>] [--top-k <n>] [--anchor <literal>] [--semantic-only] [--rerank] [--diversify] [--min-relevance <0..1>] [--explain] [--trace-chunk <id>] [--agent --json] [--json]
 ```
 
 Options:
@@ -108,6 +108,8 @@ Options:
 - `--anchor <literal>`: add one or more literal anchors for hybrid discovery. Repeatable.
 - `--semantic-only`: disable lexical-anchor discovery and use semantic/vector discovery only.
 - `--rerank`: use Jev to judge candidate relevance after vector discovery.
+- `--diversify`: opt-in shortlist diversification; requires hybrid discovery and `--rerank`. The local lexical pool expands to at most 32 candidates, then anchors retain priority and selection favors less-represented files/units. Primary/context assessment caps and thresholds are unchanged. This is an unvalidated coverage experiment, not a new default or authority heuristic.
+- `--trace-chunk <id>`: repeatable, at most eight distinct SHA-256 chunk IDs; requires full `--explain --json`, without `--agent`. Reports publication presence, discovery/pool/shortlist loss, context eligibility/assessment/selection, exact judgment requests, embedding collisions and output cutoff. Tracing adds no provider judgments. Reports contain source text and queries: retain outside the corpus and do not export them for blinded grading. See [bounded coverage diagnostics](../../docs/evaluation/bounded-coverage.md).
 - `--min-relevance <0..1>`: with reranking, withhold evidence below this score. Default is `0.75`.
 - `--explain`: include diagnostic details, rejected candidates, intent, scores, provenance, and coverage.
 - `--agent --json`: emit compact machine-oriented search output with citations, bounded previews, evidence status, and coverage warnings. `--agent` requires `--json`.
@@ -130,7 +132,7 @@ Infer and print the structured query intent without running retrieval.
 npm run cli -- search <query> --show-intent [--root <path>] [--json]
 ```
 
-`--show-intent` cannot be combined with retrieval options such as `--rerank`, `--top-k`, `--semantic-only`, `--anchor`, `--min-relevance`, or `--explain`.
+`--show-intent` cannot be combined with retrieval options such as `--rerank`, `--top-k`, `--semantic-only`, `--anchor`, `--min-relevance`, `--explain`, `--diversify`, or `--trace-chunk`.
 
 ### `index`
 

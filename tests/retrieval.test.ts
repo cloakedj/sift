@@ -232,6 +232,65 @@ test("semantic search returns source-linked active publication matches from cach
     assert.equal(hybrid.coverage.exhaustive, false);
     assert.equal(hybrid.coverage.assessedPrimaryCandidates, 2);
     assert.equal(hybrid.execution, "complete");
+    assert.equal(hybrid.diagnostics, undefined);
+    assert.equal(hybrid.shortlist.strategy, "ranked");
+    const traceChunks = report.results.map((hit) => hit.record.id);
+    const traced = await search({
+      rerank: true,
+      explain: true,
+      topK: 1,
+      traceChunks: [...traceChunks, "0".repeat(64)],
+    });
+    assert.deepEqual(traced.results, reranked.results);
+    assert.deepEqual(
+      traced.judgments,
+      reranked.judgments,
+      "diagnostics must not add assessment visits",
+    );
+    assert.equal(traced.diagnostics!.assessments.length, 2);
+    assert.ok(
+      traced.diagnostics!.assessments.every(
+        (trace) => trace.stage === "primary" && trace.cache === "reused",
+      ),
+    );
+    assert.deepEqual(traced.diagnostics!.targets.map((trace) => trace.primaryOutcome).sort(), [
+      "not-in-publication",
+      "rejected",
+      "returned",
+    ]);
+    assert.equal(traced.diagnostics!.targets[0]!.embedding!.collisionGroupSize, 2);
+    assert.doesNotMatch(JSON.stringify(traced.diagnostics), /unused-cache-hit-key|apiToken/);
+    const diversified = await search({
+      discovery: "hybrid",
+      rerank: true,
+      topK: 1,
+      explain: true,
+      shortlist: "diversified",
+    });
+    assert.equal(requestedTopK, 8);
+    assert.equal(diversified.shortlist.strategy, "diversified");
+    assert.equal(diversified.shortlist.lexicalPoolLimit, 32);
+    assert.deepEqual(diversified.budget, hybrid.budget);
+    assert.equal(diversified.results[0]!.record.id, hybrid.results[0]!.record.id);
+    assert.equal(
+      diversified.coverage.assessedPrimaryCandidates,
+      hybrid.coverage.assessedPrimaryCandidates,
+    );
+    await assert.rejects(search({ shortlist: "diversified", rerank: true }), /hybrid discovery/);
+    await assert.rejects(search({ shortlist: "diversified", discovery: "hybrid" }), /--rerank/);
+    await assert.rejects(search({ traceChunks }), /--explain/);
+    await assert.rejects(search({ traceChunks: ["invalid"], explain: true }), /SHA-256/);
+    await assert.rejects(
+      search({ traceChunks: [traceChunks[0]!, traceChunks[0]!], explain: true }),
+      /distinct/,
+    );
+    await assert.rejects(
+      search({
+        traceChunks: Array.from({ length: 9 }, (_, i) => String(i).repeat(64)),
+        explain: true,
+      }),
+      /at most eight/,
+    );
     const budgeted = await search({ discovery: "hybrid", topK: 1 });
     assert.equal(budgeted.ranking, "hybrid");
     assert.equal(budgeted.truncation.results, true);
@@ -269,6 +328,16 @@ test("semantic search returns source-linked active publication matches from cach
     assert.equal(insufficient.results.length, 0);
     assert.equal(insufficient.candidates!.length, 2);
     assert.equal((await search({ rerank: true, minRelevance: 0 })).results.length, 2);
+    const cutoff = await search({
+      rerank: true,
+      minRelevance: 0,
+      topK: 1,
+      explain: true,
+      traceChunks,
+    });
+    assert.ok(
+      cutoff.diagnostics!.targets.some((target) => target.primaryOutcome === "omitted-by-top-k"),
+    );
     await assert.rejects(search({ minRelevance: 0.5 }), /requires --rerank/);
     await assert.rejects(search({ rerank: true, minRelevance: NaN }), /between 0 and 1/);
     const semanticFetch = globalThis.fetch;

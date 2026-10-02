@@ -12,6 +12,14 @@
 
 `tests/relevance-cases.test.ts` checks that source hashes, the full file set and all chunk boundaries still match; labels cannot silently survive source changes or additional unlabeled chunks. It also checks unique case/chunk keys, valid references and positive/negative coverage. Tests verify dataset consistency, not the semantic truth of judgments or model quality. Any corpus or chunker change requires reviewing labels before updating the pins.
 
+For `structure-v4`, the unchanged handbook source was reviewed again: departure is
+now the combined title/instruction at lines 1–4, and recovery the combined
+heading/instruction at lines 5–7. The separate heading keys were removed. All case
+questions and positive/negative decisions remain unchanged; neither title adds a
+verification method or self-service procedure. Source hashes and fixture contents
+are unchanged. This is a development label review, not independent adjudication;
+old suite hashes/generations cannot be reused as current comparison evidence.
+
 ## Running a comparison
 
 The product runner requires explicit acknowledgement of paid calls and an explicit answer policy:

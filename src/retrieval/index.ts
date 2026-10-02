@@ -22,6 +22,10 @@ import { DEFAULT_TOP_K, DEFAULT_MIN_RELEVANCE } from "./consts.js";
 import { contextCandidates, expandContext } from "./context/utils.js";
 import { MAX_CONTEXT_BYTES, MAX_CONTEXT_CHUNKS, MAX_SEEDS } from "./context/consts.js";
 import { discoverCandidates } from "./discovery/utils.js";
+import type { DiscoveryTrace, ShortlistSummary } from "./discovery/types.js";
+import { MAX_TRACE_CHUNKS } from "./diagnostics/consts.js";
+import { retrievalDiagnostics } from "./diagnostics/utils.js";
+import type { StagedAssessmentTrace } from "./diagnostics/types.js";
 import { MAX_ANCHORS, MAX_ANCHOR_BYTES } from "./discovery/consts.js";
 import { orderEvidence } from "./utils.js";
 import { MAX_QUERY_TOP_K, MAX_EMBEDDING_BYTES } from "../publication/consts.js";
@@ -55,6 +59,27 @@ export class RetrievalService {
       const topK = options.topK ?? DEFAULT_TOP_K;
       const hybrid = options.discovery !== "semantic";
       const anchors = options.anchors ?? [];
+      const strategy = options.shortlist ?? "ranked";
+      const traceChunks = options.traceChunks ?? [];
+      if (
+        !["ranked", "diversified"].includes(strategy) ||
+        (strategy === "diversified" && (!hybrid || !options.rerank))
+      )
+        return yield* Errors.fail(
+          "INVALID_ARGUMENT",
+          "Diversified shortlisting requires hybrid discovery and --rerank",
+        );
+      if (
+        !Array.isArray(traceChunks) ||
+        traceChunks.length > MAX_TRACE_CHUNKS ||
+        new Set(traceChunks).size !== traceChunks.length ||
+        traceChunks.some((id) => typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id)) ||
+        (traceChunks.length > 0 && !options.explain)
+      )
+        return yield* Errors.fail(
+          "INVALID_ARGUMENT",
+          "--trace-chunk requires --explain and at most eight distinct SHA-256 chunk IDs",
+        );
       if (
         (options.discovery !== undefined && !["hybrid", "semantic"].includes(options.discovery)) ||
         (!hybrid && anchors.length) ||
@@ -205,14 +230,48 @@ export class RetrievalService {
         });
       }
       const discovery = hybrid
-        ? discoverCandidates(query, inspected.records, results, candidateLimit, anchors)
-        : { results, discovered: results.length, omitted: 0, anchorMatches: 0 };
+        ? discoverCandidates(query, inspected.records, results, candidateLimit, anchors, {
+            strategy,
+            traceChunks,
+          })
+        : {
+            results,
+            discovered: results.length,
+            omitted: 0,
+            anchorMatches: 0,
+            shortlist: {
+              strategy: "semantic",
+              poolCandidates: results.length,
+              lexicalPoolLimit: 0,
+            } satisfies ShortlistSummary,
+            traces: traceChunks.map((id): DiscoveryTrace => {
+              const index = results.findIndex((hit) => hit.record.id === id);
+              return {
+                id,
+                semanticRank: index < 0 ? undefined : index + 1,
+                inPool: index >= 0,
+                shortlisted: index >= 0,
+              };
+            }),
+          };
       const candidates = discovery.results;
       mark(hybrid ? "hybrid-discovery" : "semantic-discovery");
       let ranked =
         options.rerank && candidates.length
-          ? yield* this._reranking.rank(root, intentResult.intent, candidates, reranker!)
-          : { results: candidates, judgments: { reused: 0, new: 0 } };
+          ? yield* this._reranking.rank(
+              root,
+              intentResult.intent,
+              candidates,
+              reranker!,
+              traceChunks,
+            )
+          : { results: candidates, judgments: { reused: 0, new: 0 }, traces: undefined };
+      const primaryResults = ranked.results;
+      let contextResults: SearchReport["results"] = [];
+      const assessments: StagedAssessmentTrace[] = (ranked.traces ?? []).map((trace) => ({
+        ...trace,
+        stage: "primary",
+      }));
       if (options.rerank && candidates.length) {
         mark("jev-rerank");
         const pool = contextCandidates(ranked.results, inspected.records);
@@ -221,6 +280,14 @@ export class RetrievalService {
           intentResult.intent,
           pool,
           reranker!,
+          traceChunks,
+        );
+        contextResults = contextJudgments.results;
+        assessments.push(
+          ...(contextJudgments.traces ?? []).map((trace) => ({
+            ...trace,
+            stage: "context" as const,
+          })),
         );
         ranked.judgments.reused += contextJudgments.judgments.reused;
         ranked.judgments.new += contextJudgments.judgments.new;
@@ -231,6 +298,10 @@ export class RetrievalService {
             intentResult.intent,
             expanded,
             reranker!,
+            traceChunks,
+          );
+          assessments.push(
+            ...(contextual.traces ?? []).map((trace) => ({ ...trace, stage: "expanded" as const })),
           );
           ranked = {
             results: orderEvidence(contextual.results, minRelevance),
@@ -261,6 +332,12 @@ export class RetrievalService {
             ? "Ranked by reciprocal discovery ranks, not combined raw scores or search confidence. Evidence is not assessed without reranking."
             : "Scores are cosine similarities, not search confidence. No relevance threshold or Jev reranking is applied.",
       });
+      if (strategy === "diversified")
+        findings.push({
+          severity: "info",
+          message:
+            "Experimental diversified shortlist: bounded local discovery pool, unchanged assessment limits. Source diversity does not establish question coverage or authority.",
+        });
       if (!options.rerank && intentResult.intent.negativeSignals.length)
         findings.push({
           severity: "warning",
@@ -313,6 +390,23 @@ export class RetrievalService {
           severity: "info",
           message: `${accepted.length - topK} eligible results were omitted by --top-k. This is response truncation, not missing corpus coverage.`,
         });
+      const returned = accepted
+        .slice(0, topK)
+        .map((result, index) => ({ ...result, rank: index + 1 }));
+      const diagnostics = traceChunks.length
+        ? retrievalDiagnostics({
+            traceChunks,
+            records: inspected.records,
+            discovery: discovery.traces ?? [],
+            primary: primaryResults,
+            context: contextResults,
+            final: ranked.results,
+            returned,
+            rerank: assessed,
+            minRelevance,
+            assessments,
+          })
+        : undefined;
       timings.push({ stage: "end-to-end", milliseconds: performance.now() - searchStarted });
       return {
         schemaVersion: 1,
@@ -352,6 +446,8 @@ export class RetrievalService {
           seeds: options.rerank ? MAX_SEEDS : 0,
         },
         intent: options.explain ? intentResult.intent : undefined,
+        shortlist: discovery.shortlist,
+        diagnostics,
         publication: {
           fingerprint: publication.fingerprint,
           namespace: publication.namespace,
@@ -359,7 +455,7 @@ export class RetrievalService {
           vectorBackend: publication.vectorBackend,
           verifiedAt: publication.verifiedAt,
         },
-        results: accepted.slice(0, topK).map((result, index) => ({ ...result, rank: index + 1 })),
+        results: returned,
         evidence,
         candidates: options.explain ? ranked.results : undefined,
         judgments: options.explain && options.rerank ? ranked.judgments : undefined,

@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "status": "draft-not-frozen",
+  "caseId": null,
+  "split": null,
+  "controlKind": null,
+  "questionArtifact": null,
+  "promptArtifacts": [],
+  "skillArtifacts": [],
+  "source": {
+    "revision": null,
+    "workingTreePatchArtifact": null,
+    "workingTreeStatusArtifact": null,
+    "untrackedInputArtifacts": []
+  },
+  "environment": {
+    "workingDirectory": null,
+    "root": null,
+    "configPath": null,
+    "configurationArtifact": null,
+    "permittedResourcesArtifact": null,
+    "toolPermissionsArtifact": null,
+    "model": null,
+    "provider": null,
+    "effectiveSettingsArtifact": null,
+    "publicationGeneration": null,
+    "publicationConfigurationArtifact": null
+  },
+  "artifacts": [],
+  "artifactEntryContract": {
+    "id": "unique opaque ID",
+    "path": "private artifact path",
+    "sha256": "digest of retained bytes",
+    "bytes": "integer byte count",
+    "capturedAt": "ISO timestamp",
+    "redactions": "explicit list; empty only if none"
+  },
+  "review": {
+    "status": "pending-independent-review",
+    "reviewer": null,
+    "reviewedAt": null,
+    "requiredFacts": [],
+    "prerequisites": [],
+    "sideEffects": [],
+    "limitations": [],
+    "statusDistinctions": [],
+    "acceptableAbstentions": [],
+    "unsupportedClaims": [],
+    "rubricArtifact": null,
+    "rubricFrozenAt": null
+  },
+  "requiredFactEntryContract": {
+    "id": "unique fact ID",
+    "questionPart": "exact subquestion",
+    "fact": "required assertion, not desired verbosity",
+    "sources": "pinned artifact IDs plus inclusive original source line ranges",
+    "status": "current, historical, proposed, or explicitly unknown"
+  },
+  "runs": [],
+  "runEntryContract": {
+    "runId": "unique repetition ID",
+    "condition": "private condition label",
+    "evidencePackArtifact": "ordered pack ID for fixed-evidence runs",
+    "retrievalReportArtifacts": "full reports, not just compact projections",
+    "toolTraceArtifact": "ordered requests and responses",
+    "finalAnswerArtifact": "original answer",
+    "anonymizedAnswerArtifact": "answer-only grading export",
+    "timingsArtifact": "end-to-end and stage measurements",
+    "usageArtifact": "reported Pi and backend usage; cached/uncached separately",
+    "cost": "null if unknown; otherwise amount, currency, source and inclusion boundary",
+    "cacheState": "known observations or unknown with reason",
+    "workflowCompliance": "actual scope/tool use and authorized/disclosed fallback",
+    "failure": "structured normalized failure or null; never score provider error as abstention"
+  },
+  "grading": {
+    "anonymousMappingArtifact": null,
+    "gradesArtifact": null,
+    "gradesFrozenAt": null,
+    "conditionsRevealedAt": null
+  },
+  "missing": [
+    "Exact original questions, prompts, answers and traces have not been supplied.",
+    "Model settings, publication metadata, cache state, timings and costs are unknown.",
+    "Independent source review and held-out allocation are pending."
+  ]
+}

@@ -5,6 +5,12 @@ import { Errors } from "../errors/index.js";
 import { FileSystem, type FileSystemService } from "../filesystem/index.js";
 import type { LocalStore, Receipt } from "./types.js";
 
+type OnboardingLock = {
+  pid: number;
+  runId: string;
+  createdAt: string;
+};
+
 export class StateStore implements LocalStore {
   public constructor(
     private readonly _directory: string,
@@ -71,7 +77,7 @@ export class StoreService {
   /**
    * Acquire a single-writer lock for the scope; failed acquisition must never
    * release another run's lock. Reject symlinked state directories before writing.
-   * When resuming, remove an existing lock before acquiring a new one.
+   * Resume removes only locks whose recorded writer process is known to have exited.
    */
   public open(root: string, runId: string, options: { resume?: boolean } = {}) {
     return Effect.gen(this, function* () {
@@ -84,9 +90,14 @@ export class StoreService {
           });
       }
       const lock = join(directory, "onboarding.lock");
-      if (options.resume) yield* this._fs.remove(lock);
+      if (options.resume) yield* this._removeStaleLock(lock);
+      const content = JSON.stringify({
+        pid: process.pid,
+        runId,
+        createdAt: new Date().toISOString(),
+      });
       yield* Effect.acquireRelease(
-        this._fs.write(lock, JSON.stringify({ pid: process.pid, runId }), true).pipe(
+        this._fs.write(lock, content, true).pipe(
           Effect.catchIf(
             (error) => error.metadata.nativeCode === "EEXIST",
             () =>
@@ -100,6 +111,64 @@ export class StoreService {
         () => this._fs.remove(lock).pipe(Effect.orDie),
       );
       return new StateStore(directory, runId, this._fs, yield* Effect.makeSemaphore(1));
+    });
+  }
+
+  private _removeStaleLock(lock: string) {
+    return Effect.gen(this, function* () {
+      const existing = yield* this._fs.readJson<Partial<OnboardingLock>>(lock);
+      if (!existing) return;
+      if (typeof existing.pid !== "number" || !Number.isInteger(existing.pid) || existing.pid <= 0)
+        return yield* Errors.fail(
+          "STORE_LOCKED",
+          `Cannot safely resume because ${lock} does not record a valid writer pid. Remove it manually only after verifying no Sift writer is active.`,
+          { path: lock },
+        );
+      const stopped = yield* this._isStopped(existing.pid, lock);
+      if (!stopped)
+        return yield* Errors.fail(
+          "STORE_LOCKED",
+          `Cannot safely resume because lock writer pid ${existing.pid} still appears active.`,
+          { path: lock, pid: existing.pid },
+        );
+      yield* this._fs.remove(lock);
+    }).pipe(
+      Effect.catchIf(
+        (error) => error.code === "INVALID_DATA",
+        () =>
+          Errors.fail(
+            "STORE_LOCKED",
+            `Cannot safely resume because ${lock} is not valid lock JSON. Remove it manually only after verifying no Sift writer is active.`,
+            { path: lock },
+          ),
+      ),
+    );
+  }
+
+  private _isStopped(pid: number, lock: string) {
+    return Effect.gen(function* () {
+      const stopped = yield* Errors.attempt(
+        () => {
+          try {
+            process.kill(pid, 0);
+            return false;
+          } catch (error) {
+            const nativeCode =
+              error && typeof error === "object" && "code" in error ? error.code : undefined;
+            if (nativeCode === "ESRCH") return true;
+            if (nativeCode === "EPERM") return false;
+            return undefined;
+          }
+        },
+        "IO",
+        { path: lock, operation: "check-process", pid },
+      );
+      if (typeof stopped === "boolean") return stopped;
+      return yield* Errors.fail("IO", "Unable to check lock writer process", {
+        path: lock,
+        operation: "check-process",
+        pid,
+      });
     });
   }
 }

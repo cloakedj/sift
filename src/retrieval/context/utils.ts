@@ -9,7 +9,7 @@ import {
 } from "./consts.js";
 import { MAX_CANDIDATES } from "../reranking/consts.js";
 
-function related(source: SemanticChunkRecord, records: SemanticChunkRecord[]) {
+export function contextLinks(source: SemanticChunkRecord, records: SemanticChunkRecord[]) {
   const links = [...(source.resource.structure?.related ?? [])];
   if (source.resource.structure) return links;
   const neighbors = records
@@ -38,7 +38,7 @@ export function contextCandidates(
     if ((result.relevance?.score ?? 0) < MIN_SEED_RELEVANCE) continue;
     const source = byId.get(result.record.id);
     if (!source) continue;
-    for (const link of related(source, records)) {
+    for (const link of contextLinks(source, records)) {
       const record = byId.get(link.id);
       if (!record || record.id === source.id || pool.has(record.id)) continue;
       if (pool.size >= MAX_CANDIDATES) break;
@@ -69,7 +69,7 @@ export function expandContext(
     if (index >= MAX_SEEDS || (result.relevance?.score ?? 0) < MIN_SEED_RELEVANCE) return result;
     const source = byId.get(result.record.id);
     if (!source) return result;
-    const links = related(source, records)
+    const links = contextLinks(source, records)
       .filter((link) => (scores.get(link.id) ?? 0) >= MIN_CONTEXT_RELEVANCE)
       .sort((a, b) => (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0));
     const context: NonNullable<SearchResult["context"]> = [];

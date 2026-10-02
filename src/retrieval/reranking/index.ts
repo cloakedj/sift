@@ -16,8 +16,8 @@ import {
   QUESTION_SET_VERSION,
   RELEVANCE_CRITERIA,
 } from "./consts.js";
-import type { RelevanceJudgment, JudgmentCache } from "./types.js";
-import { requestFingerprint } from "./utils.js";
+import type { AssessmentTrace, RelevanceJudgment, JudgmentCache } from "./types.js";
+import { reportedUsage, requestFingerprint } from "./utils.js";
 import { MAX_CONTEXT_CHUNKS, MAX_CONTEXT_BYTES } from "../context/consts.js";
 
 export class RerankingService {
@@ -35,12 +35,22 @@ export class RerankingService {
    * hits still require current source checks; callers must recheck publication
    * currency after evaluation. Failed batches may retain successful judgments.
    */
-  public rank(root: string, intent: QueryIntent, candidates: SearchResult[], client: JevService) {
+  public rank(
+    root: string,
+    intent: QueryIntent,
+    candidates: SearchResult[],
+    client: JevService,
+    traceChunks: readonly string[] = [],
+  ) {
     return Effect.gen(this, function* () {
       if (candidates.length > MAX_CANDIDATES)
         return yield* Errors.fail("PAYLOAD_LIMIT", "Reranking supports at most eight candidates");
       if (!candidates.length)
-        return { results: [] as SearchResult[], judgments: { reused: 0, new: 0 } };
+        return {
+          results: [] as SearchResult[],
+          judgments: { reused: 0, new: 0 },
+          ...(traceChunks.length ? { traces: [] as AssessmentTrace[] } : {}),
+        };
       if (client.model !== intent.provenance.model)
         return yield* Errors.fail(
           "CONFIGURATION",
@@ -138,6 +148,7 @@ export class RerankingService {
         yield* Effect.makeSemaphore(1),
       );
       const judgments = { reused: 0, new: 0 };
+      const traces: AssessmentTrace[] = [];
       const ranked = yield* Effect.forEach(
         requests,
         ({ candidate, request }) =>
@@ -191,6 +202,20 @@ export class RerankingService {
               questionSetVersion: QUESTION_SET_VERSION,
               fingerprint,
             };
+            const usage = "usage" in response ? response.usage : undefined;
+            const contextIds = candidate.context?.map((item) => item.record.id) ?? [];
+            if (
+              traceChunks.includes(candidate.record.id) ||
+              contextIds.some((id) => traceChunks.includes(id))
+            )
+              traces.push({
+                candidateId: candidate.record.id,
+                contextIds,
+                cache: valid ? "reused" : "new",
+                usage: reportedUsage(usage),
+                request,
+                judgment: relevance,
+              });
             return { ...candidate, relevance };
           }),
         { concurrency: CONCURRENCY },
@@ -203,7 +228,12 @@ export class RerankingService {
             a.vectorId.localeCompare(b.vectorId),
         )
         .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
-      return { results, judgments };
+      traces.sort(
+        (a, b) =>
+          candidates.findIndex((item) => item.record.id === a.candidateId) -
+          candidates.findIndex((item) => item.record.id === b.candidateId),
+      );
+      return { results, judgments, ...(traceChunks.length ? { traces } : {}) };
     });
   }
 }

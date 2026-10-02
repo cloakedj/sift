@@ -33,16 +33,17 @@ For the selected root (shown here as the unconfigured `docs` default):
 npm run --silent cli -- search '<question>' --root docs --rerank --top-k 5 --agent --json
 ```
 
-`--agent --json` keeps citations, bounded previews, supporting context, evidence status, and coverage warnings without full taxonomy/provenance. `previewTruncated` means read the cited range, not that the remainder is irrelevant. Top-k limits returned results; it does not guarantee five hits or expand the assessment budget.
+`--agent --json` keeps citations, numbered previews, supporting context, evidence status, and coverage warnings without full taxonomy/provenance. Agent schema 2 uses original source line numbers; `previewRange` is the displayed excerpt, while top-level ranges describe the full chunk. Cite visible lines without rereading them. When `previewTruncated` hides a required fact, read the missing range (include the last displayed line if `previewClippedMidLine`). Top-k limits returned results, not assessment work. See `docs/structured-retrieval.md` for format details.
 
 ## Verify before searching again
 
 - No `rg`, `grep`, `find`, or manual source discovery before Sift results, except scope/config inspection above, an explicitly requested lexical baseline, or a user request not to use Sift.
 - Read relevant returned ranges and supporting context within the permitted corpus. Combine adjacent/overlapping ranges from the same file into one read; do not reread available source or dump whole files unnecessarily.
-- Check every part of the question against the evidence, not just the top score. One file can cover a broad question; multiple files alone do not establish completeness.
+- Maintain a compact internal checklist: question part | required fact | evidence found (source range) | remaining gap. Check already retrieved/read evidence for the named missing fact before another call. One file can cover a broad question; multiple files alone do not establish completeness.
 - For conversion/handling/persistence questions, trace nearby side effects such as receipts, counters, final state, and writes. Include only relevant details, not an exhaustive subsystem tour.
 - Targeted `rg` within an exact Sift-returned file is allowed for verification, not directory-wide discovery. Prefer source already in context.
-- If evidence covers the question, answer with paths and line ranges. Stop; do not search again merely to collect more citations.
+- Before answering, check prerequisites, relevant side effects and limitations. Verify literal paths, constants, defaults and citation ranges; distinguish current behavior from historical/proposed changes. Inspect existing interfaces before recommending new abstractions.
+- If evidence covers the question, answer with paths and line ranges. Stop; do not search again merely to collect more citations. Keep the checklist internal unless it helps explain a remaining gap.
 
 ## Escalate only for a named gap
 
@@ -54,7 +55,7 @@ For diagnosis, rerun the same command with `--explain` (keep `--agent --json`):
 npm run --silent cli -- search '<question>' --root docs --rerank --top-k 5 --agent --explain --json
 ```
 
-Explain exposes assessed candidates, including rejected ones; it does not inherently widen retrieval. Rejected candidates are not accepted evidence. Scores are not calibrated truth probabilities.
+Explain exposes assessed candidates, including rejected ones; it does not inherently widen retrieval. Rejected candidates are not accepted evidence. Scores are not calibrated truth probabilities. For a known missing passage, `docs/evaluation/bounded-coverage.md` documents targeted `--trace-chunk` diagnostics with full reports. `--diversify` is an opt-in evaluation condition; do not silently enable it.
 
 If a specific gap remains, issue a focused follow-up query naming that gap, using compact agent output. Do not append a fixed list of generic keywords. Continue only while each search addresses a distinct unresolved fact and adds useful evidence.
 
@@ -75,6 +76,7 @@ Changing selection can invalidate existing publication. Ask before semantic onbo
 ## Answer boundaries
 
 - Distinguish accepted results, supporting context, and diagnostic candidates.
+- `supported` means accepted evidence exists, not complete question coverage. Per-candidate relevance, retrieval execution/coverage, agent question coverage and final correctness are separate.
 - `execution: complete` is bounded execution, not exhaustive coverage. Report unresolved gaps honestly; never turn no results into proof of absence.
 - Keep raw diagnostics out of the final answer unless requested. Prefer verified source over inferred summaries.
 - Baseline comparisons must not invoke Sift search. Use the same permitted question/scope, with separate sessions to avoid answer leakage.

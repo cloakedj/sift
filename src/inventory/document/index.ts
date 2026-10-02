@@ -4,12 +4,13 @@ import { CHUNKER_VERSION, MAX_CHUNK_BYTES, MAX_CHUNK_LINES } from "../consts.js"
 import type { InventoryChunk } from "../types.js";
 import type { SourceUnit } from "../structure/types.js";
 import type { DocumentRegion, DocumentPiece } from "./types.js";
+import { groupDocumentPieces } from "./utils.js";
 
 export class DocumentChunker {
   /**
-   * Extract ATX-heading sections and paragraphs without semantic inference.
-   * Fenced blocks are opaque to heading/paragraph detection. A section owns its
-   * heading and contains child units; its full range includes those descendants.
+   * Extract ATX sections and bounded evidence passages without semantic inference.
+   * Fences stay opaque. A section owns its heading and first direct body passage;
+   * later paragraphs/passages remain children within its full source-unit range.
    * All ranges address original bytes, including CRLF and multibyte characters.
    */
   public chunk(text: string, path: string, resourceId: string): InventoryChunk[] {
@@ -47,7 +48,7 @@ export class DocumentChunker {
           parent: sections.at(-1),
         };
         sections.push(region);
-        pieces.push({ region, start, end, line });
+        pieces.push({ region, start, end, line, endLine: line });
       } else if (content.trim() || fence) {
         const opensFence = !fence && delimiter;
         if (opensFence) paragraph = undefined;
@@ -60,11 +61,12 @@ export class DocumentChunker {
             kind: opensFence ? "fenced-block" : "paragraph",
             parent: sections.at(-1),
           };
-          pieces.push({ region: paragraph, start, end, line });
+          pieces.push({ region: paragraph, start, end, line, endLine: line });
         } else {
           paragraph.end = end;
           paragraph.endLine = line;
           pieces.at(-1)!.end = end;
+          pieces.at(-1)!.endLine = line;
         }
         if (opensFence) fence = { character: delimiter[1]![0]!, length: delimiter[1]!.length };
         else if (
@@ -81,6 +83,7 @@ export class DocumentChunker {
         // Preserve separators in the preceding piece, but not as standalone evidence.
         if (pieces.length) {
           pieces.at(-1)!.end = end;
+          pieces.at(-1)!.endLine = line;
           const previous = pieces.at(-1)!.region;
           if (previous.kind !== "section") {
             previous.end = end;
@@ -114,15 +117,20 @@ export class DocumentChunker {
       return region.unit;
     };
     const chunks: InventoryChunk[] = [];
-    for (const piece of pieces) {
+    for (const piece of markdown ? groupDocumentPieces(source, pieces) : pieces) {
       const unit = unitFor(piece.region);
       const ancestors: SourceUnit[] = [];
       for (let parent = piece.region.parent; parent; parent = parent.parent)
         ancestors.push(unitFor(parent));
+      const headings = [unit, ...ancestors].filter((item) => item.kind === "section").reverse();
+      const label = headings.length
+        ? headings.map((item) => item.label ?? "").join(" > ")
+        : undefined;
       let chunkLine = piece.line;
       for (let start = piece.start; start < piece.end;) {
         let end = Math.min(start + MAX_CHUNK_BYTES, piece.end);
         while (end < piece.end && (source[end]! & 0xc0) === 0x80) end--;
+        if (end < piece.end && source[end - 1] === 13 && source[end] === 10) end--;
         let lines = 0;
         let lastLine = chunkLine;
         for (let cursor = start; cursor < end; cursor++) {
@@ -148,7 +156,7 @@ export class DocumentChunker {
             mode: "document",
             unit,
             ancestors,
-            label: unit.label ?? ancestors[0]?.label,
+            label,
             related: [],
           },
         });

@@ -78,6 +78,17 @@ test("option values and query positionals do not become corpus roots", async () 
     for (const [command, args] of [
       ["onboard", ["--limit", "2", "--concurrency=3", "--dry-run"]],
       ["search", ["--anchor", "one", "--anchor", "two", "--top-k", "5", "--", "--root"]],
+      [
+        "search",
+        [
+          "--trace-chunk",
+          "a".repeat(64),
+          "--trace-chunk",
+          "b".repeat(64),
+          "--diversify",
+          "question",
+        ],
+      ],
     ] as const)
       assert.equal((await run(command, [...args], child)).resolution?.resolvedRoot, root);
     await writeFile(join(root, "file.txt"), "text");

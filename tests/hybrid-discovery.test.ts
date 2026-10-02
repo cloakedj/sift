@@ -131,9 +131,111 @@ test("known omitted discovery candidates are counted separately from returned-re
   assert.equal(anchored.omitted, 12);
 });
 
+test("opt-in diversification reaches complementary files at the same primary assessment limit", () => {
+  const repeated = Array.from({ length: 20 }, (_, index) => {
+    const item = record(
+      `dominant-${String(index).padStart(2, "0")}`,
+      "repair publication governance",
+    );
+    item.resource.uri = "file:///history.md";
+    return item;
+  });
+  const repair = record("repair", "publication repair prerequisite");
+  const governance = record("governance", "governance decisions persist before publication");
+  const records = [...repeated, repair, governance];
+  const baseline = discoverCandidates("repair publication governance", records, [], 8);
+  const options = { strategy: "diversified" as const };
+  const diversified = discoverCandidates(
+    "repair publication governance",
+    records,
+    [],
+    8,
+    [],
+    options,
+  );
+  assert.ok(baseline.results.every((hit) => hit.record.resource.uri === "file:///history.md"));
+  assert.ok(diversified.results.some((hit) => hit.record.id === repair.id));
+  assert.ok(diversified.results.some((hit) => hit.record.id === governance.id));
+  assert.equal(baseline.results.length, 8);
+  assert.equal(diversified.results.length, 8);
+  assert.equal(diversified.shortlist.lexicalPoolLimit, 32);
+  assert.equal(baseline.shortlist.lexicalPoolLimit, 8);
+  assert.equal(diversified.discovered, baseline.discovered);
+  assert.deepEqual(
+    diversified,
+    discoverCandidates("repair publication governance", [...records].reverse(), [], 8, [], options),
+  );
+  assert.ok(diversified.results.every((hit) => hit.relevance === undefined));
+});
+
+test("diversification retains anchor priority and never hard-excludes repeated files", () => {
+  const records = Array.from({ length: 12 }, (_, index) => {
+    const item = record(
+      `id-${String(index).padStart(2, "0")}`,
+      `query ${index === 11 ? "CLUE" : ""}`,
+    );
+    item.resource.uri = "file:///one-file.md";
+    return item;
+  });
+  const result = discoverCandidates("query", records, [], 8, [{ kind: "literal", value: "CLUE" }], {
+    strategy: "diversified",
+  });
+  assert.equal(result.results.length, 8);
+  assert.equal(result.results[0]!.record.id, records[11]!.id);
+  assert.equal(result.results[0]!.source, "anchor");
+  assert.equal(new Set(result.results.map((hit) => hit.record.id)).size, 8);
+  assert.ok(
+    result.results.slice(1).every((hit) => hit.record.resource.uri === "file:///one-file.md"),
+  );
+});
+
+test("diversification rotates structural units within a single file before their continuations", () => {
+  const chunks = new DocumentChunker().chunk(
+    "# History\n\n" + "old query\n".repeat(100) + "\n# Current\n\nquery current implementation\n",
+    "evolution.md",
+    "file",
+  );
+  const records = chunks.map((chunk) => {
+    const item = record(chunk.id, chunk.text);
+    item.resource.uri = "file:///evolution.md";
+    item.resource.structure = chunk.structure;
+    return item;
+  });
+  const result = discoverCandidates("old query", records, [], 2, [], { strategy: "diversified" });
+  assert.equal(result.results.length, 2);
+  assert.ok(result.results.some((hit) => hit.record.resource.structure!.label === "Current"));
+  assert.ok(result.results.some((hit) => hit.record.resource.structure!.label === "History"));
+});
+
+test("target discovery traces distinguish no hit, pre-pool and shortlist losses without changing selection", () => {
+  const records = Array.from({ length: 40 }, (_, index) =>
+    record(`id-${String(index).padStart(2, "0")}`, "query"),
+  );
+  const traces = ["absent", records[0]!.id, records[9]!.id, records[39]!.id];
+  const options = { strategy: "diversified" as const, traceChunks: traces };
+  const result = discoverCandidates("query", records, [], 8, [], options);
+  assert.deepEqual(
+    result.traces?.map(
+      ({ semanticRank: _semanticRank, anchorRank: _anchorRank, ...trace }) => trace,
+    ),
+    [
+      { id: "absent", lexicalRank: undefined, inPool: false, shortlisted: false },
+      { id: records[0]!.id, lexicalRank: 1, inPool: true, shortlisted: true },
+      { id: records[9]!.id, lexicalRank: 10, inPool: true, shortlisted: false },
+      { id: records[39]!.id, lexicalRank: 40, inPool: false, shortlisted: false },
+    ],
+  );
+  assert.deepEqual(
+    result.results,
+    discoverCandidates("query", records, [], 8, [], { strategy: "diversified" }).results,
+  );
+  assert.equal(result.omitted, 32);
+  assert.equal(result.shortlist.poolCandidates, 32);
+});
+
 test("document expansion follows extracted relationships, not arbitrary same-file proximity", () => {
   const chunks = new DocumentChunker().chunk(
-    "# Refunds\n\nUse ERR_REFUND_WINDOW.\n\n# Payments\n\nCards only.\n",
+    "# Refunds\n\nRefund policy.\n\nUse ERR_REFUND_WINDOW.\n\n# Payments\n\nCards only.\n",
     "policy.md",
     "policy",
   );

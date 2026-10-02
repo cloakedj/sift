@@ -3,7 +3,13 @@ import type { SemanticChunkRecord } from "../onboarding/types.js";
 import type { PublicationManifest } from "../publication/types.js";
 
 import type { RelevanceJudgment } from "./reranking/types.js";
-import type { ContextAnchor, DiscoverySignal } from "./discovery/types.js";
+import type {
+  ContextAnchor,
+  DiscoverySignal,
+  ShortlistStrategy,
+  ShortlistSummary,
+} from "./discovery/types.js";
+import type { RetrievalDiagnostics } from "./diagnostics/types.js";
 import type { Relationship, RelationshipBasis } from "../inventory/structure/types.js";
 
 export interface SearchOptions {
@@ -13,6 +19,8 @@ export interface SearchOptions {
   discovery?: "hybrid" | "semantic";
   anchors?: readonly ContextAnchor[];
   minRelevance?: number;
+  shortlist?: ShortlistStrategy;
+  traceChunks?: readonly string[];
 }
 
 export interface SearchResult {
@@ -75,6 +83,8 @@ export interface SearchReport {
     seeds: number;
   };
   intent?: QueryIntent;
+  shortlist?: ShortlistSummary;
+  diagnostics?: RetrievalDiagnostics;
   publication: Pick<
     PublicationManifest,
     "fingerprint" | "namespace" | "embeddingSpace" | "vectorBackend" | "verifiedAt"

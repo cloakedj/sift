@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "discovery": {
+    "include": [
+      "docs/**",
+      "src/**",
+      "AGENTS.md",
+      "CONTEXT.md",
+      "README.md"
+    ],
+    "exclude": [
+      "tests/**",
+      "**/*.test.ts",
+      "**/*.spec.ts",
+      "**/__tests__/**"
+    ],
+    "respectGitignore": true,
+    "hiddenDirectories": true
+  }
+}

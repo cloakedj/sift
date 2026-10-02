@@ -32,17 +32,15 @@
         "handbook.md": "ad38302a41d7d712e49f130b8b8e3683b099fc8de6a37a9f5a05f15da8a32708"
       },
       "chunks": [
-        { "key": "title", "path": "handbook.md", "startLine": 1, "endLine": 2 },
-        { "key": "departure", "path": "handbook.md", "startLine": 3, "endLine": 4 },
-        { "key": "recovery-heading", "path": "handbook.md", "startLine": 5, "endLine": 6 },
-        { "key": "recovery", "path": "handbook.md", "startLine": 7, "endLine": 7 }
+        { "key": "departure", "path": "handbook.md", "startLine": 1, "endLine": 4 },
+        { "key": "recovery", "path": "handbook.md", "startLine": 5, "endLine": 7 }
       ],
       "cases": [
         {
           "id": "text-recovery",
           "query": "Who should restore access, and what must happen first?",
           "relevant": ["recovery"],
-          "rationale": "Only the recovery instruction names the administrator and identity verification; the recovery heading alone is insufficient."
+          "rationale": "The recovery passage now includes its heading and instruction; the instruction names the administrator and identity verification. The departure passage supports neither requirement."
         },
         {
           "id": "text-departure",
