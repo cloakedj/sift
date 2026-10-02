@@ -32,7 +32,9 @@ export class InspectionService {
   public records(root: string) {
     return Effect.gen(this, function* () {
       const { directory, manifest } = yield* this._manifest(root);
-      const inventory = yield* this._inventory.discover(root);
+      const inventory = yield* this._inventory.discover(root, undefined, undefined, {
+        read: <T>(path: string) => this._fs.readJson<T>(join(directory, path)),
+      });
       const resources = new Map(inventory.resources.map((r) => [r.id, r]));
       const chunks = new Map(inventory.chunks.map((c) => [c.id, c]));
       const records: SemanticChunkRecord[] = [];

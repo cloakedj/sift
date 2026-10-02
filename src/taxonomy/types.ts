@@ -57,6 +57,7 @@ export interface Judgment {
   errorDetails?: ErrorDetails;
 }
 export interface TaxonomySnapshot {
+  inputFingerprint?: string;
   schemaVersion: 1;
   version: string;
   model: string;

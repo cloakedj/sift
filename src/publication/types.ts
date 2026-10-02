@@ -36,7 +36,19 @@ export interface Reconciliation {
   stale: string[];
 }
 
+export interface EmbeddingCacheEntry {
+  key: string;
+  values: number[];
+}
+
+export interface PublicationCleanup {
+  pending: { id: string; notBefore: string }[];
+  mutations: string[];
+  failures: ErrorDetails[];
+}
+
 export interface PublicationManifest {
+  cleanup?: PublicationCleanup;
   schemaVersion: 2 | 3;
   reconciliation?: Reconciliation;
   supersededIds?: string[];

@@ -12,7 +12,7 @@ import {
   OVERLAP_LINES,
   MAX_STRUCTURE_BYTES,
 } from "./consts.js";
-import type { InventoryChunk, Unit } from "./types.js";
+import type { InventoryChunk, ResourceSnapshot, Unit } from "./types.js";
 import { SyntaxChunker } from "./syntax/index.js";
 import { SYNTAX_EXTENSIONS } from "./syntax/consts.js";
 import { DocumentChunker } from "./document/index.js";
@@ -44,9 +44,12 @@ export class ResourceReader {
   /**
    * Stream the source into validated chunks and release the stream on completion or failure.
    */
-  public read() {
+  public read(cached?: ResourceSnapshot) {
     return Effect.scoped(
       Effect.gen(this, function* () {
+        // Hash every byte rather than trusting timestamps. Changed files take a
+        // second streaming pass; unchanged files avoid decoding and parsing.
+        if (cached && (yield* this._matches(cached))) return structuredClone(cached);
         const stream = yield* Effect.acquireRelease(
           Errors.attempt(() => createReadStream(this._file, { highWaterMark: 64 * 1024 }), "IO", {
             path: this._path,
@@ -91,6 +94,34 @@ export class ResourceReader {
           },
           chunks: this._chunks,
         };
+      }),
+    );
+  }
+  private _matches(cached: ResourceSnapshot) {
+    return Effect.scoped(
+      Effect.gen(this, function* () {
+        const digest = createHash("sha256");
+        const stream = yield* Effect.acquireRelease(
+          Errors.attempt(() => createReadStream(this._file), "IO", { path: this._path }),
+          (handle) =>
+            Effect.sync(() => {
+              handle.destroy();
+            }),
+        );
+        yield* Stream.fromAsyncIterable(stream as AsyncIterable<Buffer>, (cause) =>
+          Errors.normalize(cause, "IO", { path: this._path }),
+        ).pipe(
+          Stream.runForEach((buffer) =>
+            Effect.sync(() => {
+              digest.update(buffer);
+            }),
+          ),
+        );
+        return (
+          cached.resource.uri === this._uri &&
+          cached.resource.path === this._path &&
+          cached.resource.resourceHash === digest.digest("hex")
+        );
       }),
     );
   }

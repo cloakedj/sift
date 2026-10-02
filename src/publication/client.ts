@@ -4,6 +4,7 @@ import { EmbeddingInputService } from "./input/index.js";
 import {
   EMBEDDING_BATCH_SIZE,
   GET_VECTOR_BATCH_SIZE,
+  DELETE_VECTOR_BATCH_SIZE,
   MAX_EMBEDDING_BYTES,
   MAX_QUERY_TOP_K,
 } from "./consts.js";
@@ -81,6 +82,24 @@ export class CloudflarePublicationClient {
         return yield* Errors.fail(
           "CLOUDFLARE_RESPONSE",
           "Vectorize did not return a mutation identifier",
+        );
+      return mutation;
+    });
+  }
+
+  public deleteVectors(ids: string[]) {
+    return Effect.gen(this, function* () {
+      if (!ids.length || ids.length > DELETE_VECTOR_BATCH_SIZE || new Set(ids).size !== ids.length)
+        return yield* Errors.fail("PAYLOAD_LIMIT", "Vectorize deletion requires 1–20 distinct IDs");
+      const body = yield* this._request(
+        `/vectorize/v2/indexes/${encodeURIComponent(this._config.vectorizeIndex)}/delete_by_ids`,
+        { headers: { "content-type": "application/json" }, body: JSON.stringify({ ids }) },
+      );
+      const mutation = (body as { mutationId?: unknown })?.mutationId;
+      if (typeof mutation !== "string" || !mutation)
+        return yield* Errors.fail(
+          "CLOUDFLARE_RESPONSE",
+          "Vectorize did not return a deletion mutation identifier",
         );
       return mutation;
     });

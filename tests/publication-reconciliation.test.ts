@@ -74,6 +74,17 @@ test("Vectorize reconciliation paginates, rejects cursor loops and sends documen
     assert.deepEqual(await Effect.runPromise(client.getVectors(["a"])), [
       { id: "a", namespace: "", metadata: {} },
     ]);
+    globalThis.fetch = ((url, init) => {
+      assert.ok(String(url).endsWith("/delete_by_ids"));
+      assert.deepEqual(JSON.parse(init!.body as string), { ids: ["old"] });
+      return Promise.resolve(Response.json({ success: true, result: { mutationId: "deleted" } }));
+    }) as typeof fetch;
+    assert.equal(await Effect.runPromise(client.deleteVectors(["old"])), "deleted");
+    assert.equal((await Effect.runPromise(Effect.either(client.deleteVectors([]))))._tag, "Left");
+    assert.equal(
+      (await Effect.runPromise(Effect.either(client.deleteVectors(["old", "old"]))))._tag,
+      "Left",
+    );
   } finally {
     globalThis.fetch = original;
   }

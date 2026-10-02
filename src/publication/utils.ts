@@ -13,6 +13,26 @@ import type {
   Reconciliation,
 } from "./types.js";
 
+import { TOKENIZER_ID } from "./input/consts.js";
+
+export const validEmbedding = (values: unknown): values is number[] =>
+  Array.isArray(values) &&
+  values.length === 768 &&
+  values.every((value) => typeof value === "number" && Number.isFinite(value)) &&
+  values.some((value) => value !== 0);
+
+export const embeddingCacheKey = (document: string, model: string) =>
+  hashIdentity({
+    version: 1,
+    document,
+    model,
+    provider: "cloudflare-workers-ai",
+    dimensions: 768,
+    pooling: "cls",
+    preprocessing: "identity-v1",
+    tokenizer: TOKENIZER_ID,
+  });
+
 export const hashIdentity = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
@@ -173,7 +193,17 @@ export const summarizeStatus = (
   if (publication?.reconciliation?.stale.length)
     findings.push({
       severity: "warning",
-      message: `${publication.reconciliation.stale.length} superseded vectors remain outside the current namespace; no remote deletion was performed.`,
+      message: `${publication.reconciliation.stale.length} superseded vectors remain outside the current namespace; owned vectors are eligible for deferred cleanup.`,
+    });
+  if (publication?.cleanup?.pending.length)
+    findings.push({
+      severity: "info",
+      message: `${publication.cleanup.pending.length} retired vectors await the retention deadline or deletion confirmation; cleanup resumes on publish.`,
+    });
+  if (publication?.cleanup?.failures.length)
+    findings.push({
+      severity: "warning",
+      message: "Retired-generation cleanup failed; the verified publication remains active.",
     });
   return {
     root,

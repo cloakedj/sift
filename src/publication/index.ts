@@ -16,6 +16,8 @@ import {
 } from "./consts.js";
 import { CloudflareAuthService } from "./auth.js";
 import { CloudflarePublicationClient } from "./client.js";
+import { EmbeddingCache } from "./embedding-cache.js";
+import { GenerationCleanup } from "./cleanup.js";
 import type { EmbeddingVector, PublicationManifest, RemoteVector } from "./types.js";
 import {
   publicationFingerprint,
@@ -118,6 +120,7 @@ export class PublicationService {
           saved.vectorBackend.accountId === config.accountId &&
           saved.vectorBackend.index === config.vectorizeIndex
         ) {
+          publication.cleanup = saved.cleanup;
           publication.supersededIds = [
             ...new Set([
               ...(saved.supersededIds ?? []),
@@ -140,6 +143,7 @@ export class PublicationService {
               ),
               (handle) => Effect.sync(() => handle.stop()),
             );
+            const embeddings = new EmbeddingCache(store, client, config.model);
             const allVectors: EmbeddingVector[] = [];
             for (let offset = 0; offset < records.length; offset += EMBEDDING_BATCH_SIZE) {
               progress.update(offset, { stage: "embedding/loading cached batch" });
@@ -164,10 +168,10 @@ export class PublicationService {
                   ))
               )
                 return yield* Errors.fail("INVALID_DATA", "Invalid cached publication embeddings");
-              const vectors =
-                cached?.vectors ??
-                (yield* client.embed(batch.map((record) => record.embeddingDocument)));
-              if (!cached) yield* store.write(cachePath, { fingerprint, vectors });
+              const vectors = yield* embeddings.load(
+                batch.map((record) => record.embeddingDocument),
+                cached?.vectors,
+              );
               const payload = vectors.map((values, index): EmbeddingVector => {
                 const record = batch[index]!;
                 return {
@@ -192,13 +196,13 @@ export class PublicationService {
               const missing = payload.filter(
                 (vector) => !metadataMatches(vector, remote.get(vector.id)),
               );
-              if (missing.length) {
-                publication.mutations.push(yield* client.upsert(missing));
-                publication.published = [
-                  ...new Set([...publication.published, ...missing.map((vector) => vector.id)]),
-                ];
-                yield* store.write(PUBLICATION_FILE, publication);
-              }
+              if (missing.length) publication.mutations.push(yield* client.upsert(missing));
+              // Recover IDs already present remotely even if an earlier process
+              // stopped after mutation acceptance but before saving its manifest.
+              publication.published = [
+                ...new Set([...publication.published, ...payload.map((vector) => vector.id)]),
+              ];
+              yield* store.write(PUBLICATION_FILE, publication);
               progress.update(offset + batch.length, { stage: "submitted or already present" });
             }
             publication.state = "pending";
@@ -283,6 +287,10 @@ export class PublicationService {
           return yield* Effect.fail(outcome.left);
         }
         yield* store.write(PUBLICATION_FILE, publication);
+        // Activation is durable before cleanup. Cleanup failures must not
+        // invalidate a verified replacement or destroy rollback on publish failure.
+        if (publication.state === "complete")
+          yield* new GenerationCleanup(store, client, this._messages).run(publication);
         return publication;
       }),
     );

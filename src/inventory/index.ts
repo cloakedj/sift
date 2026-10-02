@@ -9,7 +9,8 @@ import { CHUNKER_VERSION, MAX_CHUNK_BYTES, MAX_CHUNK_LINES, defaultPolicy } from
 import { ResourceReader } from "./reader.js";
 import { linkCodeReferences } from "./syntax/utils.js";
 import { linkStructure } from "./structure/utils.js";
-import type { DiscoveryPolicy, Inventory } from "./types.js";
+import type { DiscoveryPolicy, Inventory, InventoryCache, ResourceSnapshot } from "./types.js";
+import { hash } from "../shared/utils.js";
 
 export class InventoryService {
   public constructor(
@@ -21,12 +22,14 @@ export class InventoryService {
     return this._configuration.load(root);
   }
   /**
-   * Inventory permitted resources and bounded chunks without inference or writes.
+   * Inventory permitted resources without inference. Optional onboarding caches
+   * reuse chunks only after byte hashing; cache-free discovery performs no writes.
    */
   public discover(
     rootArg: string,
     policy: DiscoveryPolicy = defaultPolicy,
     activity?: ActivityHandle,
+    cache?: InventoryCache,
   ): Effect.Effect<Inventory, AppError> {
     return Effect.gen(this, function* () {
       const root = resolve(rootArg);
@@ -58,7 +61,7 @@ export class InventoryService {
         inferenceCalls: 0,
         published: false,
       };
-      yield* this._visit(root, base, effectivePolicy, inventory, selection, activity);
+      yield* this._visit(root, base, effectivePolicy, inventory, selection, activity, cache);
       activity?.update(
         `Onboarding: linking code references across ${inventory.chunks.length} chunks`,
       );
@@ -80,6 +83,7 @@ export class InventoryService {
     inventory: Inventory,
     selection: SelectionService,
     activity?: ActivityHandle,
+    cache?: InventoryCache,
   ): Effect.Effect<void, AppError> {
     const path = relative(base, file).split("\\").join("/") || ".";
     return Effect.gen(this, function* () {
@@ -104,7 +108,15 @@ export class InventoryService {
         }
         yield* selection.loadIgnore(file);
         for (const entry of (yield* this._fs.list(file)).sort())
-          yield* this._visit(join(file, entry), base, policy, inventory, selection, activity);
+          yield* this._visit(
+            join(file, entry),
+            base,
+            policy,
+            inventory,
+            selection,
+            activity,
+            cache,
+          );
       } else if (info.isFile()) {
         if (
           policy.files.has(name.toLowerCase()) ||
@@ -114,7 +126,35 @@ export class InventoryService {
           inventory.skipped.push({ path, reason: "denylisted file" });
           return;
         }
-        const result = yield* new ResourceReader(file, path).read();
+        const cachePath = `inventory-${hash(`${CHUNKER_VERSION}:${file}:${path}`)}.json`;
+        const cached = cache ? yield* cache.read<ResourceSnapshot>(cachePath) : undefined;
+        if (
+          cached !== undefined &&
+          (!cached ||
+            !cached.resource ||
+            typeof cached.resource.resourceHash !== "string" ||
+            typeof cached.resource.uri !== "string" ||
+            typeof cached.resource.path !== "string" ||
+            !Array.isArray(cached.chunks) ||
+            cached.chunks.some(
+              (chunk) =>
+                !chunk ||
+                typeof chunk.id !== "string" ||
+                typeof chunk.text !== "string" ||
+                typeof chunk.chunkHash !== "string" ||
+                typeof chunk.resourceId !== "string" ||
+                typeof chunk.startByte !== "number" ||
+                typeof chunk.endByte !== "number",
+            ))
+        )
+          return yield* Errors.fail("INVALID_DATA", "Invalid cached resource snapshot", {
+            path: cachePath,
+          });
+        const result = yield* new ResourceReader(file, path).read(cached);
+        // Persist before cross-file links mutate chunks; links are rebuilt from
+        // the current permitted corpus, never resurrected from an old snapshot.
+        if (cache?.write && JSON.stringify(cached?.resource) !== JSON.stringify(result.resource))
+          yield* cache.write(cachePath, result);
         inventory.resources.push(result.resource);
         for (const chunk of result.chunks) inventory.chunks.push(chunk);
       } else inventory.skipped.push({ path, reason: "not a regular file" });

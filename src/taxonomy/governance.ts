@@ -26,10 +26,12 @@ class GovernanceRun {
     private readonly _jev: JevService,
     private readonly _store: LocalStore,
     harvest: TaxonomySnapshot["harvest"],
+    inputFingerprint: string,
     private readonly _activity?: ActivityHandle,
   ) {
     this._snapshot = {
       schemaVersion: 1,
+      inputFingerprint,
       version: "",
       model: _jev.model,
       harvest,
@@ -50,19 +52,23 @@ class GovernanceRun {
         `Onboarding: loading cached taxonomy judgments — ${this._selected.length} candidates`,
       );
       const previous = yield* this._store.read<TaxonomySnapshot>("taxonomy.json");
+      const cachedJudgments = new Map(
+        previous?.judgments.map((judgment) => [
+          `${judgment.dimension}:${judgment.candidateId}`,
+          judgment,
+        ]),
+      );
       for (const dimension of DIMENSIONS) {
         const pending: Candidate[] = [];
         for (const candidate of this._selected) {
-          const cached =
+          const cached = cachedJudgments.get(`${dimension}:${candidate.id}`);
+          if (
             !rerun &&
-            previous?.judgments.find(
-              (judgment) =>
-                judgment.dimension === dimension &&
-                judgment.candidateId === candidate.id &&
-                judgment.fingerprint === this._fingerprint(candidate, dimension) &&
-                judgment.status !== "failed",
-            );
-          if (cached) this._snapshot.judgments.push(cached);
+            cached &&
+            cached.fingerprint === this._fingerprint(candidate, dimension) &&
+            cached.status !== "failed"
+          )
+            this._snapshot.judgments.push(cached);
           else pending.push(candidate);
         }
         for (let start = 0; start < pending.length; start += GOVERNANCE_CONFIG.maxCandidates)
@@ -232,13 +238,35 @@ export class TaxonomyService {
   public constructor(private readonly _jev: JevService) {}
   public govern(inventory: Inventory, store: LocalStore, rerun = false, activity?: ActivityHandle) {
     return Effect.gen(this, function* () {
+      const inputFingerprint = hash(
+        JSON.stringify({
+          model: this._jev.model,
+          governance: GOVERNANCE_VERSION,
+          harvesting: HARVEST_VERSION,
+          governanceConfig: GOVERNANCE_CONFIG,
+          harvestConfig: HARVEST_CONFIG,
+          chunker: inventory.chunkerVersion,
+          resources: inventory.resources,
+          chunks: inventory.chunks.map((chunk) => chunk.id),
+        }),
+      );
+      const previous = yield* store.read<TaxonomySnapshot>("taxonomy.json");
+      if (
+        !rerun &&
+        previous?.schemaVersion === 1 &&
+        previous.inputFingerprint === inputFingerprint &&
+        previous.judgments.every((judgment) => judgment.status !== "failed")
+      ) {
+        activity?.update("Onboarding: reusing unchanged taxonomy harvest and judgments");
+        return previous;
+      }
       activity?.update(
         `Onboarding: harvesting taxonomy candidates from ${inventory.resources.length} resources`,
       );
       yield* Effect.yieldNow();
       const harvest = yield* harvestCandidatesCooperative(inventory);
       const run = yield* Errors.attempt(
-        () => new GovernanceRun(inventory, this._jev, store, harvest, activity),
+        () => new GovernanceRun(inventory, this._jev, store, harvest, inputFingerprint, activity),
         "INVALID_DATA",
       );
       return yield* run.run(rerun);

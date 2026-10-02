@@ -198,6 +198,7 @@ test("publication resumes cached embeddings after failed upsert and requires que
   let upserts = 0;
   let failUpsert = true;
   let stored: { id: string; namespace: string }[] = [];
+  let deletions = 0;
   const run = <A>(
     effect: Effect.Effect<
       A,
@@ -248,22 +249,38 @@ test("publication resumes cached embeddings after failed upsert and requires que
           result: { pooling: "cls", data: [Array(768).fill(1)] },
         });
       }
+      if (path.endsWith("/delete_by_ids")) {
+        deletions++;
+        const active = JSON.parse(await readFile(join(root, ".sift", "publication.json"), "utf8"));
+        assert.equal(active.state, "complete", "activation must be durable before deletion");
+        const { ids } = JSON.parse(init!.body as string) as { ids: string[] };
+        assert.ok(ids.every((id) => !active.published.includes(id)));
+        stored = stored.filter((vector) => !ids.includes(vector.id));
+        return Response.json({ success: true, result: { mutationId: "deletion" } });
+      }
       if (path.endsWith("/upsert")) {
         upserts++;
         if (failUpsert) return new Response("secret", { status: 403 });
         const blob = (init!.body as FormData).get("vectors") as Blob;
-        stored = (await blob.text())
+        const incoming = (await blob.text())
           .trim()
           .split("\n")
           .map((line) => JSON.parse(line));
+        stored = [
+          ...new Map([...stored, ...incoming].map((vector) => [vector.id, vector])).values(),
+        ];
         return Response.json({ success: true, result: { mutationId: "mutation" } });
       }
       assert.ok(path.endsWith("/query"));
       const query = JSON.parse(init!.body as string);
-      assert.equal(query.namespace, stored[0]!.namespace);
+      assert.ok(stored.some((vector) => vector.namespace === query.namespace));
       return Response.json({
         success: true,
-        result: { matches: stored.map((vector) => ({ ...vector, score: 1 })) },
+        result: {
+          matches: stored
+            .filter((vector) => vector.namespace === query.namespace)
+            .map((vector) => ({ ...vector, score: 1 })),
+        },
       });
     }) as typeof fetch;
     await assert.rejects(run(publishVectors(root)));
@@ -277,6 +294,14 @@ test("publication resumes cached embeddings after failed upsert and requires que
     assert.equal(resumed.namespace, published.namespace);
     assert.equal(upserts, 2);
     assert.equal(embeddings, 1);
+    // Recover remotely accepted vectors when their local publication IDs were lost.
+    await writeFile(
+      join(root, ".sift", "publication.json"),
+      JSON.stringify({ ...resumed, published: [] }),
+    );
+    assert.equal((await run(publishVectors(root))).published.length, resumed.expected);
+    assert.equal((await run(publicationStatus(root))).complete, true);
+    assert.equal(upserts, 2);
     // Lost remote data is repaired from the durable embedding cache.
     stored = [];
     assert.equal((await run(publishVectors(root))).state, "complete");
@@ -287,6 +312,41 @@ test("publication resumes cached embeddings after failed upsert and requires que
     assert.equal((await run(publishVectors(root))).state, "complete");
     assert.equal(upserts, 4);
     assert.equal(embeddings, 1);
+    const recordPath = join(
+      root,
+      ".sift",
+      "records",
+      (await readdir(join(root, ".sift", "records")))[0]!,
+    );
+    const record = JSON.parse(await readFile(recordPath, "utf8"));
+    // A changed semantic generation with identical embedding text needs no AI call.
+    record.provenance.projectionVersion = "different-projection-version";
+    await writeFile(recordPath, JSON.stringify(record));
+    const next = await run(publishVectors(root));
+    assert.equal(next.state, "complete");
+    assert.notEqual(next.namespace, published.namespace);
+    assert.equal(embeddings, 1);
+    assert.equal(upserts, 5);
+    assert.equal(next.cleanup?.pending.length, 1);
+    assert.equal(deletions, 0);
+    record.embeddingDocument = "Changed embedding input";
+    await writeFile(recordPath, JSON.stringify(record));
+    const changed = await run(publishVectors(root));
+    assert.equal(changed.state, "complete");
+    assert.equal(embeddings, 2);
+    assert.equal(changed.cleanup?.pending.length, 2);
+    assert.equal(deletions, 0);
+    // Simulate expiry; publish retries cleanup without embedding or upserting again.
+    changed.cleanup!.pending.forEach((item) => {
+      item.notBefore = new Date(0).toISOString();
+    });
+    await writeFile(join(root, ".sift", "publication.json"), JSON.stringify(changed));
+    const cleaned = await run(publishVectors(root));
+    assert.equal(cleaned.cleanup?.pending.length, 0);
+    assert.equal(deletions, 1);
+    assert.equal(stored.length, 1);
+    assert.equal(embeddings, 2);
+    assert.equal(upserts, 6);
     globalThis.fetch = (() => assert.fail("status must not call Cloudflare")) as typeof fetch;
     assert.equal((await run(publicationStatus(root))).complete, true);
     await writeFile(join(root, "sample.txt"), "Changed content.");

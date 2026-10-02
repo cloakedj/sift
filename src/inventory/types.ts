@@ -1,6 +1,18 @@
 import type { ResolvedConfig } from "../configuration/types.js";
 import type { ChunkStructure } from "./structure/types.js";
 import type { ErrorDetails } from "../errors/types.js";
+import type { Effect } from "effect";
+import type { AppError } from "../errors/index.js";
+
+export interface ResourceSnapshot {
+  resource: InventoryResource;
+  chunks: InventoryChunk[];
+}
+
+export interface InventoryCache {
+  read<T>(path: string): Effect.Effect<T | undefined, AppError>;
+  write?(path: string, value: unknown): Effect.Effect<void, AppError>;
+}
 
 export interface DiscoveryPolicy {
   hiddenDirectories: boolean;

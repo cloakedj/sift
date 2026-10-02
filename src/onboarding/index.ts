@@ -54,19 +54,20 @@ export class OnboardingService {
             "Concurrency and limit must be positive integers",
           );
         mark("configuration");
+        yield* this._messages.stage("Onboarding", "Opening local store");
+        const runId = randomUUID();
+        const store = yield* this._stores.open(root, runId, { resume: options.resume });
+        mark("store-open");
         const discovery = yield* this._messages.stage(
           "Onboarding",
           "Discovering and chunking resources",
         );
-        const inventory = yield* this._inventory.discover(root, undefined, discovery);
+        const inventory = yield* this._inventory.discover(root, undefined, discovery, store);
         mark("resource-discovery");
         yield* this._messages.stage(
           "Onboarding",
-          `Opening local store — ${inventory.resources.length} resources, ${inventory.chunks.length} chunks discovered`,
+          `Inventory ready — ${inventory.resources.length} resources, ${inventory.chunks.length} chunks discovered`,
         );
-        const runId = randomUUID();
-        const store = yield* this._stores.open(root, runId, { resume: options.resume });
-        mark("store-open");
         const chunks = inventory.chunks.slice(0, limit);
         const manifest: RunManifest = {
           schemaVersion: 2,
@@ -111,7 +112,7 @@ export class OnboardingService {
         mark("taxonomy-governance");
         yield* this._messages.stage(
           "Onboarding",
-          `Classifying ${chunks.length} chunks (concurrency ${concurrency})`,
+          `Processing ${chunks.length} chunks (cached or new; concurrency ${concurrency})`,
         );
         const progress = yield* Effect.acquireRelease(
           Effect.sync(() =>
@@ -131,13 +132,12 @@ export class OnboardingService {
               error: judgment.error!,
               details: judgment.errorDetails,
             });
+        const resources = new Map(inventory.resources.map((resource) => [resource.id, resource]));
         yield* Effect.forEach(
           chunks,
           (chunk) =>
             Effect.gen(this, function* () {
-              const resource = inventory.resources.find(
-                (resource) => resource.id === chunk.resourceId,
-              )!;
+              const resource = resources.get(chunk.resourceId)!;
               const result = yield* Effect.either(
                 this._classifier.classify(chunk, resource, taxonomy, store, runId),
               );

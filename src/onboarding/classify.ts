@@ -84,6 +84,11 @@ export class ClassificationService {
         cached.id === chunk.id &&
         cached.classificationFingerprint === fingerprint
       ) {
+        if (
+          cached.provenance.projectionVersion === PROJECTION_VERSION &&
+          JSON.stringify(cached.resource) === JSON.stringify(facts)
+        )
+          return { record: cached, reused: true };
         const record: SemanticChunkRecord = {
           ...cached,
           resource: facts,

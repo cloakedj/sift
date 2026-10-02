@@ -44,6 +44,8 @@ Options:
 
 Explicit options override configuration, then built-in defaults. Classification, governance, and recovery flags cannot be combined with `--dry-run`.
 
+Re-onboarding still scans the entire permitted corpus and hashes source bytes (timestamps are not trusted). Unchanged resources reuse cached, pre-linking chunks; cross-file links are rebuilt for the current selection. An unchanged corpus/model/policy reuses the taxonomy harvest and judgments unless governance is explicitly rerun or previous judgments failed. Unchanged classification records and projections are not rewritten. Changed taxonomy labels, model, questions, source or projection inputs retain their normal invalidation behavior; a taxonomy change can legitimately reclassify unchanged chunks. Dry runs remain cache-free and write-free.
+
 Examples:
 
 ```sh
@@ -83,6 +85,14 @@ npm run cli -- publish --root <path> [--json]
 ```
 
 Requires Cloudflare configuration and a Vectorize index compatible with the pinned embedding space: 768 dimensions, cosine metric, Workers AI `@cf/baai/bge-base-en-v1.5`, and `cls` pooling.
+
+Embedding inputs are cached by exact text and pinned model/preprocessing/tokenizer settings, independently of publication generation. Only new inputs need embedding calls; validated legacy generation caches are imported automatically. Identical inputs within a batch are embedded once.
+
+Publication generations remain immutable: changed semantic records create a new namespace and upload a full snapshot, even when embeddings are reused. Repeating an unchanged publication uploads only missing or metadata-mismatched vectors. Every run still verifies query visibility and source currency.
+
+After a replacement is verified and durably activated, retired vectors tagged as belonging to this corpus are queued for cleanup with a 24-hour grace period. **Cleanup runs on subsequent `publish` calls, not in a background timer.** It rechecks ownership, excludes active/foreign vectors, and retains pending IDs until absence is confirmed. Legacy vectors without corpus ownership metadata are not automatically deleted. Cleanup failures are recorded separately and do not invalidate the verified publication. Inspect `status --json` for `publication.cleanup` and related findings.
+
+Cloudflare deletion is asynchronous: [REST delete-by-IDs API](https://developers.cloudflare.com/api/resources/vectorize/subresources/indexes/methods/delete_by_ids/) and [client API semantics](https://developers.cloudflare.com/vectorize/reference/client-api/). Local regression tests verify protocol and recovery mechanics, not live-service behavior.
 
 ### `status`
 
