@@ -109,7 +109,7 @@ This checks local publication completeness and recorded visibility. It does not 
 Run semantic retrieval against the active publication.
 
 ```sh
-npm run cli -- search <query> [--root <path>] [--top-k <n>] [--anchor <literal>] [--semantic-only] [--rerank] [--diversify] [--min-relevance <0..1>] [--explain] [--trace-chunk <id>] [--agent --json] [--json]
+npm run cli -- search <query> [--root <path>] [--top-k <n>] [--anchor <literal>] [--semantic-only] [--lexical-scorer bm25|legacy|none] [--rerank] [--diversify] [--min-relevance <0..1>] [--explain] [--trace-chunk <id>] [--agent --json] [--json]
 ```
 
 Options:
@@ -117,6 +117,7 @@ Options:
 - `--top-k <n>`: limit returned results. Retrieval caps apply internally.
 - `--anchor <literal>`: add one or more literal anchors for hybrid discovery. Repeatable.
 - `--semantic-only`: disable lexical-anchor discovery and use semantic/vector discovery only.
+- `--lexical-scorer bm25|legacy|none`: choose the keyword lane fused (RRF) with vector results. `bm25` (default) is Okapi BM25 over path + text; `legacy` is the previous term/substring scorer; `none` disables the keyword lane (embeddings plus `--anchor` matches only). Overrides `search.fusion.lexicalScorer` from config for this search. Cannot be combined with `--semantic-only` or `--show-intent`.
 - `--rerank`: use Jev to judge candidate relevance after vector discovery.
 - `--diversify`: opt-in shortlist diversification; requires hybrid discovery and `--rerank`. The local lexical pool expands to at most 32 candidates, then anchors retain priority and selection favors less-represented files/units. Primary/context assessment caps and thresholds are unchanged. This is an unvalidated coverage experiment, not a new default or authority heuristic.
 - `--trace-chunk <id>`: repeatable, at most eight distinct SHA-256 chunk IDs; requires full `--explain --json`, without `--agent`. Reports publication presence, discovery/pool/shortlist loss, context eligibility/assessment/selection, exact judgment requests, embedding collisions and output cutoff. Tracing adds no provider judgments. Reports contain source text and queries: retain outside the corpus and do not export them for blinded grading. See [bounded coverage diagnostics](../../docs/evaluation/bounded-coverage.md).
@@ -142,7 +143,7 @@ Infer and print the structured query intent without running retrieval.
 npm run cli -- search <query> --show-intent [--root <path>] [--json]
 ```
 
-`--show-intent` cannot be combined with retrieval options such as `--rerank`, `--top-k`, `--semantic-only`, `--anchor`, `--min-relevance`, `--explain`, `--diversify`, or `--trace-chunk`.
+`--show-intent` cannot be combined with retrieval options such as `--rerank`, `--top-k`, `--semantic-only`, `--lexical-scorer`, `--anchor`, `--min-relevance`, `--explain`, `--diversify`, or `--trace-chunk`.
 
 ### `index`
 

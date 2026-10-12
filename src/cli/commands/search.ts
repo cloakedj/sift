@@ -6,7 +6,7 @@ import { agentSearchReport } from "../../messages/search/utils.js";
 import { PublicationLive } from "../../publication/index.js";
 import { searchSemantic, RetrievalLive } from "../../retrieval/index.js";
 import { COMMON_OPTIONS } from "../consts.js";
-import { positiveInteger } from "../utils.js";
+import { lexicalScorerOption, positiveInteger } from "../utils.js";
 import { CorpusCommand } from "./base.js";
 
 export class SearchCommand extends CorpusCommand {
@@ -27,6 +27,7 @@ export class SearchCommand extends CorpusCommand {
               diversify: { type: "boolean" },
               "trace-chunk": { type: "string", multiple: true },
               "semantic-only": { type: "boolean" },
+              "lexical-scorer": { type: "string" },
               anchor: { type: "string", multiple: true },
               "top-k": { type: "string" },
             },
@@ -48,6 +49,15 @@ export class SearchCommand extends CorpusCommand {
           "INVALID_ARGUMENT",
           "--diversify requires --rerank and hybrid discovery",
         );
+      if (values["lexical-scorer"] !== undefined && values["semantic-only"])
+        return yield* Errors.fail(
+          "INVALID_ARGUMENT",
+          "--lexical-scorer requires hybrid discovery, not --semantic-only",
+        );
+      const lexicalScorer = yield* Errors.attempt(
+        () => lexicalScorerOption(values["lexical-scorer"]),
+        "INVALID_ARGUMENT",
+      );
       if (
         values["show-intent"] &&
         (values.explain ||
@@ -57,11 +67,12 @@ export class SearchCommand extends CorpusCommand {
           values.anchor ||
           values.diversify ||
           values["trace-chunk"] ||
+          lexicalScorer !== undefined ||
           values["min-relevance"] !== undefined)
       )
         return yield* Errors.fail(
           "INVALID_ARGUMENT",
-          "--explain, --top-k, --rerank, --min-relevance, --semantic-only, --anchor, --diversify and --trace-chunk require retrieval, not --show-intent",
+          "--explain, --top-k, --rerank, --min-relevance, --semantic-only, --anchor, --diversify, --lexical-scorer and --trace-chunk require retrieval, not --show-intent",
         );
       const topK =
         values["top-k"] === undefined
@@ -82,6 +93,7 @@ export class SearchCommand extends CorpusCommand {
                 rerank: values.rerank,
                 shortlist: values.diversify ? "diversified" : undefined,
                 traceChunks: values["trace-chunk"],
+                lexicalScorer,
                 minRelevance:
                   values["min-relevance"] === undefined
                     ? undefined

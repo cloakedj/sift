@@ -1,3 +1,5 @@
+import type { FusionOptions } from "../retrieval/discovery/types.js";
+
 export interface SiftConfig {
   version: 1;
   discovery?: {
@@ -14,6 +16,10 @@ export interface SiftConfig {
     labelCache?: boolean;
     /** Default true. Reuse taxonomy judgments per candidate identity; only newly harvested candidates are judged. Set false (or use rerunGovernance) to re-judge everything. */
     stableTaxonomy?: boolean;
+  };
+  search?: {
+    /** Hybrid fusion of semantic and lexical discovery lanes. */
+    fusion?: FusionOptions;
   };
   publication?: {
     /** Default 8. Parallel Vectorize reads/visibility checks; 1 = sequential. */

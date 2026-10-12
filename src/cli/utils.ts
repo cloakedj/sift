@@ -1,4 +1,5 @@
 import { Errors } from "../errors/index.js";
+import { LEXICAL_SCORER_CHOICES, type LexicalScorerChoice } from "../retrieval/discovery/types.js";
 
 export function selectRoot(positionals: string[], root?: string) {
   if (positionals.length > 1 || (positionals.length && root))
@@ -27,6 +28,16 @@ export function configurationArgs(args: string[]) {
       Errors.raise("INVALID_ARGUMENT", "--config requires a file path");
   }
   return { args: remaining, config };
+}
+
+export function lexicalScorerOption(value: string | undefined): LexicalScorerChoice | undefined {
+  if (value === undefined) return undefined;
+  if (!(LEXICAL_SCORER_CHOICES as readonly string[]).includes(value))
+    Errors.raise(
+      "INVALID_ARGUMENT",
+      `--lexical-scorer must be one of ${LEXICAL_SCORER_CHOICES.join(", ")}`,
+    );
+  return value as LexicalScorerChoice;
 }
 
 export function positiveInteger(value: string | undefined, fallback: number) {

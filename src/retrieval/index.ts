@@ -22,12 +22,14 @@ import { DEFAULT_TOP_K, DEFAULT_MIN_RELEVANCE } from "./consts.js";
 import { contextCandidates, expandContext } from "./context/utils.js";
 import { MAX_CONTEXT_BYTES, MAX_CONTEXT_CHUNKS, MAX_SEEDS } from "./context/consts.js";
 import { discoverCandidates } from "./discovery/utils.js";
-import type { DiscoveryTrace, ShortlistSummary } from "./discovery/types.js";
+import { resolveFusion, type DiscoveryTrace, type ShortlistSummary } from "./discovery/types.js";
 import { MAX_TRACE_CHUNKS } from "./diagnostics/consts.js";
 import { retrievalDiagnostics } from "./diagnostics/utils.js";
 import type { StagedAssessmentTrace } from "./diagnostics/types.js";
 import { MAX_ANCHORS, MAX_ANCHOR_BYTES } from "./discovery/consts.js";
 import { orderEvidence } from "./utils.js";
+import { ConfigurationService } from "../configuration/index.js";
+import { FileSystem, type FileSystemService } from "../filesystem/index.js";
 import { MAX_QUERY_TOP_K, MAX_EMBEDDING_BYTES } from "../publication/consts.js";
 
 export class RetrievalService {
@@ -36,6 +38,7 @@ export class RetrievalService {
     private readonly _intent: IntentService,
     private readonly _publication: PublicationService,
     private readonly _reranking: RerankingService,
+    private readonly _fs?: FileSystemService,
   ) {}
 
   /**
@@ -229,10 +232,17 @@ export class RetrievalService {
           },
         });
       }
+      const fusion = resolveFusion(
+        this._fs
+          ? (yield* new ConfigurationService(this._fs).load(root)).config.search?.fusion
+          : undefined,
+        options.lexicalScorer,
+      );
       const discovery = hybrid
         ? discoverCandidates(query, inspected.records, results, candidateLimit, anchors, {
             strategy,
             traceChunks,
+            ...(fusion ? { fusion } : {}),
           })
         : {
             results,
@@ -475,6 +485,7 @@ export const RetrievalLive = Layer.effect(
       yield* Intent,
       yield* Publication,
       yield* Reranking,
+      yield* FileSystem,
     );
   }),
 ).pipe(Layer.provide(RerankingLive));

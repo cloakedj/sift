@@ -5,6 +5,7 @@ import type { PublicationManifest } from "../publication/types.js";
 import type { RelevanceJudgment } from "./reranking/types.js";
 import type {
   ContextAnchor,
+  LexicalScorerChoice,
   DiscoverySignal,
   ShortlistStrategy,
   ShortlistSummary,
@@ -21,6 +22,8 @@ export interface SearchOptions {
   minRelevance?: number;
   shortlist?: ShortlistStrategy;
   traceChunks?: readonly string[];
+  /** Overrides search.fusion.lexicalScorer; "none" disables the lexical lane. */
+  lexicalScorer?: LexicalScorerChoice;
 }
 
 export interface SearchResult {

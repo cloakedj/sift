@@ -58,6 +58,21 @@ Configuration adds selection rules; it does **not** disable the built-in denylis
 
 These rules are not a complete secret detector or OS access sandbox. Review dry-run output before paid onboarding: permitted text can be sent to external model/embedding providers. Do not put credentials in the configuration; keep provider credentials in the existing environment/auth mechanisms.
 
+## Search options
+
+`search.fusion` tunes how hybrid search fuses vector results with the keyword lane. All fields are optional:
+
+```json
+{ "version": 1, "search": { "fusion": { "lexicalScorer": "bm25" } } }
+```
+
+- `lexicalScorer`: `bm25` (default; Okapi BM25 over path + text) or `legacy` (the previous term/substring scorer).
+- `method`: `rrf` (default), `convex` (normalized score blend, uses `alpha` in 0..1) or `dense` (no keyword lane; vectors plus anchors).
+- `rrfK` (default 60) and `lexicalWeight` (default 1): reciprocal-rank offset and keyword-lane weight.
+- `route` with `identifierLexicalWeight`: opt-in, off by default; applies a separate keyword weight to identifier-like queries.
+
+`search --lexical-scorer bm25|legacy|none` overrides `lexicalScorer` for one search; `none` is dense-only.
+
 ## Onboarding options
 
 | Option | Default | Meaning |

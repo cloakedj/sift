@@ -62,6 +62,12 @@ test("strict versioned configuration rejects unknown, invalid and escaping optio
     ...[0, 1001].map((upsertBatchSize) => ({ version: 1, publication: { upsertBatchSize } })),
     { version: 1, publication: { fastNoChange: "yes" } },
     { version: 1, publication: { waitForMutations: 1 } },
+    { version: 1, search: { fusion: { method: "bm42" } } },
+    { version: 1, search: { fusion: { lexicalScorer: "tfidf" } } },
+    { version: 1, search: { fusion: { alpha: 2 } } },
+    { version: 1, search: { fusion: { rrfK: 0 } } },
+    { version: 1, search: { fusion: { route: "yes" } } },
+    { version: 1, search: { other: true } },
     { version: 1, publication: { unknown: true } },
   ])
     assert.throws(
@@ -83,6 +89,10 @@ test("strict versioned configuration rejects unknown, invalid and escaping optio
       publication: { concurrency: 8, upsertBatchSize: 500, fastNoChange: true },
     }),
     { version: 1, publication: { concurrency: 8, upsertBatchSize: 500, fastNoChange: true } },
+  );
+  assert.deepEqual(
+    parseConfig({ version: 1, search: { fusion: { lexicalScorer: "bm25", rrfK: 60 } } }),
+    { version: 1, search: { fusion: { lexicalScorer: "bm25", rrfK: 60 } } },
   );
   assert.deepEqual(parseConfig({ version: 1, discovery: { include: [] } }), {
     version: 1,

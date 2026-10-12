@@ -1,5 +1,11 @@
 import type { SemanticChunkRecord } from "../../onboarding/types.js";
-import { scoreChunk, tokenize } from "../../lexical/utils.js";
+import {
+  bm25Scores,
+  identifierLike,
+  scoreChunk,
+  tokenStream,
+  tokenize,
+} from "../../lexical/utils.js";
 import type { SearchResult } from "../types.js";
 import type { ContextAnchor, DiscoveryOptions, DiscoveryTrace } from "./types.js";
 import { DIVERSIFIED_LEXICAL_POOL_MULTIPLIER, RECIPROCAL_RANK_OFFSET } from "./consts.js";
@@ -83,13 +89,31 @@ export function discoverCandidates(
   const lexicalPoolLimit =
     limit * (strategy === "diversified" ? DIVERSIFIED_LEXICAL_POOL_MULTIPLIER : 1);
   const terms = tokenize(query);
-  const lexical = records
-    .map((record) => {
+  const fusion = options.fusion ?? {};
+  const method = fusion.method ?? "rrf";
+  const rrfK = fusion.rrfK ?? RECIPROCAL_RANK_OFFSET;
+  const lexicalWeight =
+    fusion.route && identifierLike(query)
+      ? (fusion.identifierLexicalWeight ?? 1)
+      : (fusion.lexicalWeight ?? 1);
+  const bm25 =
+    (fusion.lexicalScorer ?? "bm25") === "bm25"
+      ? bm25Scores(
+          records.map((record) =>
+            tokenStream(`${record.resource.uri}\n${record.resource.textPreview}`),
+          ),
+          terms,
+        )
+      : undefined;
+  const lexical = (method === "dense" ? [] : records)
+    .map((record, index) => {
       const text = record.resource.textPreview;
       const path = record.resource.uri;
       return {
         record,
-        score: scoreChunk({ text, path, terms: tokenize(`${path}\n${text}`) }, query, terms),
+        score:
+          bm25?.[index] ??
+          scoreChunk({ text, path, terms: tokenize(`${path}\n${text}`) }, query, terms),
       };
     })
     .filter((hit) => hit.score > 0)
@@ -115,7 +139,8 @@ export function discoverCandidates(
       candidates.set(hit.record.id, result);
     }
     result.discovery!.push({ source, rank, score });
-    result.score += 1 / (RECIPROCAL_RANK_OFFSET + rank);
+    if (method !== "convex")
+      result.score += (source === "lexical" ? lexicalWeight : 1) / (rrfK + rank);
   };
   semantic.forEach((hit, index) => add(hit, "semantic", index + 1, hit.score));
   lexical.slice(0, lexicalPoolLimit).forEach((hit, index) =>
@@ -140,6 +165,21 @@ export function discoverCandidates(
         index + 1,
       ),
     );
+  if (method === "convex") {
+    // Min-max normalize cosine within the semantic lane; scale lexical by its maximum.
+    const alpha = fusion.alpha ?? 0.5;
+    const cosines = semantic.map((hit) => hit.score);
+    const low = Math.min(...cosines);
+    const span = Math.max(...cosines) - low || 1;
+    const lexicalMax = lexical[0]?.score || 1;
+    for (const result of candidates.values()) {
+      const semantic = result.discovery!.find((signal) => signal.source === "semantic");
+      const lexicalSignal = result.discovery!.find((signal) => signal.source === "lexical");
+      result.score =
+        alpha * (semantic?.score !== undefined ? (semantic.score - low) / span : 0) +
+        (1 - alpha) * lexicalWeight * ((lexicalSignal?.score ?? 0) / lexicalMax);
+    }
+  }
   const ranked = [...candidates.values()].sort(
     (a, b) =>
       Number(b.discovery!.some((signal) => signal.source === "anchor")) -

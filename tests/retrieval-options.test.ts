@@ -14,6 +14,10 @@ test("experimental and diagnostic CLI options reject invalid combinations before
     [["--trace-chunk", id, "--explain", "--json", "--show-intent"], /require retrieval/],
     [["--trace-chunk", "invalid", "--explain", "--json"], /SHA-256 chunk IDs/],
     [["--trace-chunk", id, "--trace-chunk", id, "--explain", "--json"], /distinct SHA-256/],
+    [["--lexical-scorer", "tfidf"], /--lexical-scorer must be one of bm25, legacy, none/],
+    [["--lexical-scorer", "current", "--json"], /--lexical-scorer must be one of/],
+    [["--lexical-scorer", "none", "--semantic-only"], /--lexical-scorer requires hybrid discovery/],
+    [["--lexical-scorer", "bm25", "--show-intent"], /require retrieval/],
   ];
   for (const [args, expected] of cases) {
     const result = spawnSync(

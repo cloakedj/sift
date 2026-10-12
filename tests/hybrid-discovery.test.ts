@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { discoverCandidates } from "../src/retrieval/discovery/utils.js";
+import { resolveFusion } from "../src/retrieval/discovery/types.js";
+import { lexicalScorerOption } from "../src/cli/utils.js";
 import { contextCandidates } from "../src/retrieval/context/utils.js";
 import { DocumentChunker } from "../src/inventory/document/index.js";
 import { linkStructure } from "../src/inventory/structure/utils.js";
@@ -266,4 +268,65 @@ test("document expansion follows extracted relationships, not arbitrary same-fil
   const pool = contextCandidates([seed], records);
   assert.ok(pool.some((item) => item.record.resource.textPreview.startsWith("# Refunds")));
   assert.ok(!pool.some((item) => item.record.resource.structure?.label === "Payments"));
+});
+
+test("fusion options: dense drops lexical-only hits; bm25 keeps exact identifier matches", () => {
+  const records = [
+    record("a", "export const ERR_REFUND_WINDOW = 'refund window closed';"),
+    record("b", "Refunds are processed within a window of days."),
+  ];
+  const dense = discoverCandidates("ERR_REFUND_WINDOW", records, [hit(records[1]!)], 8, [], {
+    fusion: { method: "dense" },
+  });
+  assert.deepEqual(
+    dense.results.map((item) => item.record.id),
+    ["b"],
+  );
+  const bm25 = discoverCandidates("ERR_REFUND_WINDOW", records, [hit(records[1]!)], 8, [], {
+    fusion: { lexicalScorer: "bm25" },
+  });
+  assert.ok(bm25.results.some((item) => item.record.id === "a"));
+  const convex = discoverCandidates("ERR_REFUND_WINDOW", records, [hit(records[1]!)], 8, [], {
+    fusion: { method: "convex", alpha: 0.3 },
+  });
+  assert.equal(convex.results[0]!.record.id, "a");
+});
+
+test("lexical scorer override: config default bm25, CLI override wins, none is dense-only", () => {
+  assert.equal(resolveFusion(undefined, undefined), undefined);
+  assert.deepEqual(resolveFusion({ lexicalScorer: "legacy", rrfK: 30 }, "bm25"), {
+    lexicalScorer: "bm25",
+    rrfK: 30,
+    method: undefined,
+  });
+  assert.deepEqual(resolveFusion({ method: "dense" }, "legacy"), {
+    method: "rrf",
+    lexicalScorer: "legacy",
+  });
+  assert.deepEqual(resolveFusion({ lexicalScorer: "bm25" }, "none"), {
+    lexicalScorer: "bm25",
+    method: "dense",
+  });
+  const records = [
+    record("a", "export const ERR_REFUND_WINDOW = 'refund window closed';"),
+    record("b", "Refunds are processed within a window of days."),
+  ];
+  const none = discoverCandidates("ERR_REFUND_WINDOW", records, [hit(records[1]!)], 8, [], {
+    fusion: resolveFusion(undefined, "none"),
+  });
+  assert.deepEqual(
+    none.results.map((item) => [item.record.id, item.source]),
+    [["b", "semantic"]],
+  );
+  assert.ok(none.results.every((item) => item.discovery!.every((s) => s.source !== "lexical")));
+  const byDefault = discoverCandidates("ERR_REFUND_WINDOW", records, [hit(records[1]!)], 8);
+  assert.ok(byDefault.results.some((item) => item.record.id === "a"));
+});
+
+test("--lexical-scorer parsing accepts bm25, legacy and none only", () => {
+  assert.equal(lexicalScorerOption(undefined), undefined);
+  for (const value of ["bm25", "legacy", "none"] as const)
+    assert.equal(lexicalScorerOption(value), value);
+  for (const value of ["", "BM25", "current", "dense", "tfidf"])
+    assert.throws(() => lexicalScorerOption(value), /--lexical-scorer must be one of/);
 });

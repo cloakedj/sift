@@ -17,7 +17,7 @@ function object(value: unknown, keys: string[], section: string): Record<string,
 export function parseConfig(value: unknown): SiftConfig {
   const config = object(
     value,
-    ["version", "discovery", "onboarding", "publication"],
+    ["version", "discovery", "onboarding", "publication", "search"],
     "configuration",
   );
   if (config.version !== 1) Errors.raise("INVALID_ARGUMENT", "Configuration version must be 1");
@@ -96,6 +96,52 @@ export function parseConfig(value: unknown): SiftConfig {
     for (const key of ["fastNoChange", "waitForMutations"])
       if (publication[key] !== undefined && typeof publication[key] !== "boolean")
         Errors.raise("INVALID_ARGUMENT", `publication.${key} must be a boolean`);
+  }
+  if (config.search !== undefined) {
+    const search = object(config.search, ["fusion"], "search");
+    if (search.fusion !== undefined) {
+      const fusion = object(
+        search.fusion,
+        [
+          "method",
+          "lexicalScorer",
+          "rrfK",
+          "lexicalWeight",
+          "alpha",
+          "route",
+          "identifierLexicalWeight",
+        ],
+        "search.fusion",
+      );
+      if (
+        fusion.method !== undefined &&
+        !["rrf", "convex", "dense"].includes(fusion.method as string)
+      )
+        Errors.raise("INVALID_ARGUMENT", "search.fusion.method must be rrf, convex, or dense");
+      if (
+        fusion.lexicalScorer !== undefined &&
+        !["legacy", "bm25"].includes(fusion.lexicalScorer as string)
+      )
+        Errors.raise("INVALID_ARGUMENT", "search.fusion.lexicalScorer must be legacy or bm25");
+      for (const [key, min, max] of [
+        ["rrfK", 1, 1000],
+        ["lexicalWeight", 0, 10],
+        ["identifierLexicalWeight", 0, 10],
+        ["alpha", 0, 1],
+      ] as const) {
+        const value = fusion[key];
+        if (
+          value !== undefined &&
+          (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max)
+        )
+          Errors.raise(
+            "INVALID_ARGUMENT",
+            `search.fusion.${key} must be between ${min} and ${max}`,
+          );
+      }
+      if (fusion.route !== undefined && typeof fusion.route !== "boolean")
+        Errors.raise("INVALID_ARGUMENT", "search.fusion.route must be a boolean");
+    }
   }
   return config as unknown as SiftConfig;
 }
