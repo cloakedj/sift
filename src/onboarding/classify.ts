@@ -17,6 +17,14 @@ import {
 import type { LocalStore, SemanticChunkRecord } from "./types.js";
 import { embeddingDocument, mediaFacts } from "./utils.js";
 
+export interface ClassifyOptions {
+  labelCache?: boolean;
+}
+interface AnswerCache {
+  schemaVersion: 1;
+  answers: Record<string, unknown>;
+}
+
 export class ClassificationService {
   public constructor(private readonly _jev: JevService) {}
   /**
@@ -29,6 +37,7 @@ export class ClassificationService {
     taxonomy: TaxonomySnapshot,
     store: LocalStore,
     runId: string,
+    options: ClassifyOptions = {},
   ) {
     return Effect.gen(this, function* () {
       const client = this._jev;
@@ -101,11 +110,14 @@ export class ClassificationService {
       }
       if (Buffer.byteLength(JSON.stringify(request)) > CLASSIFICATION_PAYLOAD_BYTES)
         return yield* Errors.fail("PAYLOAD_LIMIT", "Classification payload exceeds byte guardrail");
-      const response = yield* client.evaluate(request);
-      yield* Errors.attempt(
-        () => validateResult(response, questions, client.model),
-        "PROVIDER_RESPONSE",
-      );
+      const response = options.labelCache
+        ? yield* this._evaluateWithAnswerCache(request, store)
+        : yield* client.evaluate(request);
+      if (!options.labelCache)
+        yield* Errors.attempt(
+          () => validateResult(response, questions, client.model),
+          "PROVIDER_RESPONSE",
+        );
       const kind = response.answers.resourceKind!;
       if (kind.type !== "choice")
         return yield* Errors.fail("PROVIDER_RESPONSE", "Expected resource kind Choice");
@@ -166,6 +178,60 @@ export class ClassificationService {
       record.embeddingDocument = embeddingDocument(record);
       yield* store.write(`records/${chunk.id}.json`, record);
       return { record, reused: false };
+    });
+  }
+  /**
+   * Answer each question from a content-addressed cache and ask Jev only for missing questions.
+   * Keys cover chunk content (not its URI), the exact question, the question-set version and the model,
+   * so taxonomy changes only cost the new labels and identical chunks share answers.
+   */
+  private _evaluateWithAnswerCache(request: SystemOneRequest<Questions>, store: LocalStore) {
+    return Effect.gen(this, function* () {
+      const client = this._jev;
+      const state = request.state as { resource: Record<string, unknown>; text: string };
+      const contentKey = hash(
+        JSON.stringify({
+          mediaType: state.resource.mediaType,
+          label: state.resource.label,
+          container: state.resource.container,
+          text: state.text,
+          model: client.model,
+          questionSet: QUESTION_SET_VERSION,
+        }),
+      );
+      const path = `answers-${contentKey}.json`;
+      const cache = (yield* store.read<AnswerCache>(path)) ?? { schemaVersion: 1, answers: {} };
+      const keys = Object.fromEntries(
+        Object.entries(request.questions).map(([name, question]) => [
+          name,
+          hash(JSON.stringify(question)),
+        ]),
+      );
+      const missing = Object.fromEntries(
+        Object.entries(request.questions).filter(([name]) => !(keys[name]! in cache.answers)),
+      ) as Questions;
+      let usage = { input_tokens: 0, output_tokens: 0 };
+      let model = client.model;
+      if (Object.keys(missing).length) {
+        const response = yield* client.evaluate({ ...request, questions: missing });
+        yield* Errors.attempt(
+          () => validateResult(response, missing, client.model),
+          "PROVIDER_RESPONSE",
+        );
+        for (const name of Object.keys(missing))
+          cache.answers[keys[name]!] = response.answers[name];
+        usage = { ...response.usage };
+        model = response.model;
+        yield* store.write(path, cache);
+      }
+      return {
+        model,
+        usage,
+        answers: Object.fromEntries(
+          Object.keys(request.questions).map((name) => [name, cache.answers[keys[name]!]]),
+        ),
+        cachedQuestions: Object.keys(request.questions).length - Object.keys(missing).length,
+      } as unknown as Effect.Effect.Success<ReturnType<typeof client.evaluate>>;
     });
   }
 }

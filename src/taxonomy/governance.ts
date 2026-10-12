@@ -28,6 +28,7 @@ class GovernanceRun {
     harvest: TaxonomySnapshot["harvest"],
     inputFingerprint: string,
     private readonly _activity?: ActivityHandle,
+    private readonly _stable = false,
   ) {
     this._snapshot = {
       schemaVersion: 1,
@@ -62,12 +63,12 @@ class GovernanceRun {
         const pending: Candidate[] = [];
         for (const candidate of this._selected) {
           const cached = cachedJudgments.get(`${dimension}:${candidate.id}`);
-          if (
-            !rerun &&
-            cached &&
-            cached.fingerprint === this._fingerprint(candidate, dimension) &&
-            cached.status !== "failed"
-          )
+          // Stable mode keys judgments by candidate identity (name hash) and model only, so edits that
+          // shift a candidate's evidence snippets do not re-judge it; only new candidates cost Jev calls.
+          const reusable = this._stable
+            ? previous?.model === this._jev.model
+            : cached?.fingerprint === this._fingerprint(candidate, dimension);
+          if (!rerun && cached && reusable && cached.status !== "failed")
             this._snapshot.judgments.push(cached);
           else pending.push(candidate);
         }
@@ -236,7 +237,13 @@ class GovernanceRun {
 }
 export class TaxonomyService {
   public constructor(private readonly _jev: JevService) {}
-  public govern(inventory: Inventory, store: LocalStore, rerun = false, activity?: ActivityHandle) {
+  public govern(
+    inventory: Inventory,
+    store: LocalStore,
+    rerun = false,
+    activity?: ActivityHandle,
+    stable = false,
+  ) {
     return Effect.gen(this, function* () {
       const inputFingerprint = hash(
         JSON.stringify({
@@ -266,7 +273,16 @@ export class TaxonomyService {
       yield* Effect.yieldNow();
       const harvest = yield* harvestCandidatesCooperative(inventory);
       const run = yield* Errors.attempt(
-        () => new GovernanceRun(inventory, this._jev, store, harvest, inputFingerprint, activity),
+        () =>
+          new GovernanceRun(
+            inventory,
+            this._jev,
+            store,
+            harvest,
+            inputFingerprint,
+            activity,
+            stable,
+          ),
         "INVALID_DATA",
       );
       return yield* run.run(rerun);

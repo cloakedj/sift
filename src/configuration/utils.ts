@@ -51,7 +51,7 @@ export function parseConfig(value: unknown): SiftConfig {
   if (config.onboarding !== undefined) {
     const onboarding = object(
       config.onboarding,
-      ["limit", "concurrency", "rerunGovernance"],
+      ["limit", "concurrency", "rerunGovernance", "labelCache", "stableTaxonomy"],
       "onboarding",
     );
     for (const key of ["limit", "concurrency"])
@@ -62,6 +62,9 @@ export function parseConfig(value: unknown): SiftConfig {
         Errors.raise("INVALID_ARGUMENT", `onboarding.${key} must be a positive integer`);
     if (onboarding.rerunGovernance !== undefined && typeof onboarding.rerunGovernance !== "boolean")
       Errors.raise("INVALID_ARGUMENT", "onboarding.rerunGovernance must be a boolean");
+    for (const key of ["labelCache", "stableTaxonomy"])
+      if (onboarding[key] !== undefined && typeof onboarding[key] !== "boolean")
+        Errors.raise("INVALID_ARGUMENT", `onboarding.${key} must be a boolean`);
   }
   return config as unknown as SiftConfig;
 }

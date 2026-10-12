@@ -56,6 +56,8 @@ test("strict versioned configuration rejects unknown, invalid and escaping optio
     { version: 1, discovery: { respectGitignore: "true" } },
     ...[0, -1, 1.5, "2", null].map((concurrency) => ({ version: 1, onboarding: { concurrency } })),
     { version: 1, onboarding: { rerunGovernance: "false" } },
+    { version: 1, onboarding: { labelCache: "true" } },
+    { version: 1, onboarding: { stableTaxonomy: 1 } },
   ])
     assert.throws(
       () => parseConfig(value),
@@ -66,6 +68,10 @@ test("strict versioned configuration rejects unknown, invalid and escaping optio
         return true;
       },
     );
+  assert.deepEqual(
+    parseConfig({ version: 1, onboarding: { labelCache: false, stableTaxonomy: true } }),
+    { version: 1, onboarding: { labelCache: false, stableTaxonomy: true } },
+  );
   assert.deepEqual(parseConfig({ version: 1, discovery: { include: [] } }), {
     version: 1,
     discovery: { include: [] },

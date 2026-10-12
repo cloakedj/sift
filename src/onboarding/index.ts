@@ -108,6 +108,7 @@ export class OnboardingService {
           store,
           rerunGovernance,
           governance,
+          configured?.stableTaxonomy !== false,
         );
         mark("taxonomy-governance");
         yield* this._messages.stage(
@@ -139,7 +140,9 @@ export class OnboardingService {
             Effect.gen(this, function* () {
               const resource = resources.get(chunk.resourceId)!;
               const result = yield* Effect.either(
-                this._classifier.classify(chunk, resource, taxonomy, store, runId),
+                this._classifier.classify(chunk, resource, taxonomy, store, runId, {
+                  labelCache: configured?.labelCache !== false,
+                }),
               );
               if (result._tag === "Right") {
                 const { record, reused } = result.right;
