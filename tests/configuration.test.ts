@@ -58,6 +58,11 @@ test("strict versioned configuration rejects unknown, invalid and escaping optio
     { version: 1, onboarding: { rerunGovernance: "false" } },
     { version: 1, onboarding: { labelCache: "true" } },
     { version: 1, onboarding: { stableTaxonomy: 1 } },
+    ...[0, 33, 1.5, "4"].map((concurrency) => ({ version: 1, publication: { concurrency } })),
+    ...[0, 1001].map((upsertBatchSize) => ({ version: 1, publication: { upsertBatchSize } })),
+    { version: 1, publication: { fastNoChange: "yes" } },
+    { version: 1, publication: { waitForMutations: 1 } },
+    { version: 1, publication: { unknown: true } },
   ])
     assert.throws(
       () => parseConfig(value),
@@ -71,6 +76,13 @@ test("strict versioned configuration rejects unknown, invalid and escaping optio
   assert.deepEqual(
     parseConfig({ version: 1, onboarding: { labelCache: false, stableTaxonomy: true } }),
     { version: 1, onboarding: { labelCache: false, stableTaxonomy: true } },
+  );
+  assert.deepEqual(
+    parseConfig({
+      version: 1,
+      publication: { concurrency: 8, upsertBatchSize: 500, fastNoChange: true },
+    }),
+    { version: 1, publication: { concurrency: 8, upsertBatchSize: 500, fastNoChange: true } },
   );
   assert.deepEqual(parseConfig({ version: 1, discovery: { include: [] } }), {
     version: 1,

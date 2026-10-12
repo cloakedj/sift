@@ -15,6 +15,16 @@ export interface SiftConfig {
     /** Default true. Reuse taxonomy judgments per candidate identity; only newly harvested candidates are judged. Set false (or use rerunGovernance) to re-judge everything. */
     stableTaxonomy?: boolean;
   };
+  publication?: {
+    /** Default 8. Parallel Vectorize reads/visibility checks; 1 = sequential. */
+    concurrency?: number;
+    /** Default 500. Vectors per Vectorize upsert request (max 1000). */
+    upsertBatchSize?: number;
+    /** Default true. When the saved publication is complete for the same fingerprint and index, verify by direct reads instead of re-uploading and re-polling. */
+    fastNoChange?: boolean;
+    /** Default true. Poll index info until the last upsert is processed before per-vector visibility checks. */
+    waitForMutations?: boolean;
+  };
 }
 
 export interface ResolvedConfig {

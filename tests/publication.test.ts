@@ -199,6 +199,8 @@ test("publication resumes cached embeddings after failed upsert and requires que
   let failUpsert = true;
   let stored: { id: string; namespace: string }[] = [];
   let deletions = 0;
+  let queries = 0;
+  let infos = 0;
   const run = <A>(
     effect: Effect.Effect<
       A,
@@ -237,6 +239,10 @@ test("publication resumes cached embeddings after failed upsert and requires que
           result: stored.filter((vector) => ids.includes(vector.id)),
         });
       }
+      if (path.endsWith("/info")) {
+        infos++;
+        return Response.json({ success: true, result: { processedUpToMutation: "mutation" } });
+      }
       if (init?.method === "GET")
         return Response.json({
           success: true,
@@ -272,6 +278,7 @@ test("publication resumes cached embeddings after failed upsert and requires que
         return Response.json({ success: true, result: { mutationId: "mutation" } });
       }
       assert.ok(path.endsWith("/query"));
+      queries++;
       const query = JSON.parse(init!.body as string);
       assert.ok(stored.some((vector) => vector.namespace === query.namespace));
       return Response.json({
@@ -290,7 +297,14 @@ test("publication resumes cached embeddings after failed upsert and requires que
     assert.equal(published.state, "complete");
     assert.equal(published.visible.length, published.expected);
     assert.equal(embeddings, 1);
+    // Default waitForMutations: index info is read before per-vector visibility queries.
+    assert.ok(infos > 0);
+    const queriesBefore = queries;
     const resumed = await run(publishVectors(root));
+    // Default fastNoChange: a verified, unchanged publication is re-proven by direct
+    // reads only (no upsert, no self-query polling).
+    assert.equal(queries, queriesBefore);
+    assert.equal(resumed.state, "complete");
     assert.equal(resumed.namespace, published.namespace);
     assert.equal(upserts, 2);
     assert.equal(embeddings, 1);

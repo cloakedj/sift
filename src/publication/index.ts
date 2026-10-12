@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { Context, Effect, Layer } from "effect";
+import { ConfigurationService } from "../configuration/index.js";
 import { Errors } from "../errors/index.js";
 import { FileSystem, type FileSystemService } from "../filesystem/index.js";
 import { Messages, type MessageService } from "../messages/index.js";
@@ -13,12 +14,16 @@ import {
   PUBLICATION_FILE,
   VISIBILITY_POLL_ROUNDS,
   VISIBILITY_MAX_DELAY_SECONDS,
+  MUTATION_POLL_INTERVAL_MS,
+  MUTATION_POLL_MAX_SECONDS,
+  PUBLICATION_CONCURRENCY,
+  UPSERT_BATCH_SIZE,
 } from "./consts.js";
 import { CloudflareAuthService } from "./auth.js";
 import { CloudflarePublicationClient } from "./client.js";
 import { EmbeddingCache } from "./embedding-cache.js";
 import { GenerationCleanup } from "./cleanup.js";
-import type { EmbeddingVector, PublicationManifest, RemoteVector } from "./types.js";
+import type { EmbeddingVector, PublicationManifest } from "./types.js";
 import {
   publicationFingerprint,
   stateDirectory,
@@ -49,6 +54,11 @@ export class PublicationService {
       Effect.gen(this, function* () {
         yield* this._messages.activity("Publication: authenticating and inspecting records");
         const config = yield* new CloudflareAuthService().config();
+        const tuning = (yield* new ConfigurationService(this._fs).load(root)).config.publication;
+        const concurrency = tuning?.concurrency ?? PUBLICATION_CONCURRENCY;
+        const upsertBatchSize = tuning?.upsertBatchSize ?? UPSERT_BATCH_SIZE;
+        const fastNoChange = tuning?.fastNoChange !== false;
+        const waitForMutations = tuning?.waitForMutations !== false;
         const client = new CloudflarePublicationClient(config);
         const runId = randomUUID();
         const store = yield* new StoreService(this._fs).open(root, runId);
@@ -186,71 +196,130 @@ export class PublicationService {
                 };
               });
               allVectors.push(...payload);
-              progress.update(offset, { stage: "checking/submitting batch" });
+              progress.update(offset + batch.length, { stage: "embedded or loaded" });
+            }
+            const chunks = <T>(items: T[], size: number) => {
+              const out: T[][] = [];
+              for (let offset = 0; offset < items.length; offset += size)
+                out.push(items.slice(offset, offset + size));
+              return out;
+            };
+            const readRemote = (ids: string[]) =>
+              Effect.map(
+                Effect.forEach(
+                  chunks(ids, GET_VECTOR_BATCH_SIZE),
+                  (part) => client.getVectors(part),
+                  {
+                    concurrency,
+                  },
+                ),
+                (parts) => parts.flat(),
+              );
+            const reconcile = Effect.gen(this, function* () {
+              const ids = [
+                ...new Set([
+                  ...(yield* client.listVectors()),
+                  ...allVectors.map((vector) => vector.id),
+                  ...publication.supersededIds!,
+                ]),
+              ];
+              publication.reconciliation = reconcileVectors(
+                allVectors,
+                yield* readRemote(ids),
+                fingerprint,
+                publication.corpusId!,
+                publication.supersededIds!,
+              );
+              return (
+                !publication.reconciliation.missing.length &&
+                !publication.reconciliation.mismatched.length &&
+                !publication.reconciliation.extra.length
+              );
+            });
+            // A saved, verified generation for the same fingerprint and index needs no
+            // upload or self-query polling; direct reads must still prove every vector.
+            const unchanged =
+              fastNoChange &&
+              saved?.state === "complete" &&
+              saved.fingerprint === fingerprint &&
+              saved.vectorBackend.index === config.vectorizeIndex &&
+              saved.vectorBackend.accountId === config.accountId &&
+              Array.isArray(saved.visible) &&
+              saved.visible.length === records.length;
+            let verified = false;
+            if (unchanged) {
+              verified = yield* reconcile;
+              if (verified) {
+                publication.visible = allVectors.map((vector) => vector.id);
+                publication.published = [
+                  ...new Set([...publication.published, ...publication.visible]),
+                ];
+              }
+            }
+            if (!verified) {
               const remote = new Map(
-                (yield* client.getVectors(payload.map((vector) => vector.id))).map((vector) => [
+                (yield* readRemote(allVectors.map((vector) => vector.id))).map((vector) => [
                   vector.id,
                   vector,
                 ]),
               );
-              const missing = payload.filter(
+              const missing = allVectors.filter(
                 (vector) => !metadataMatches(vector, remote.get(vector.id)),
               );
-              if (missing.length) publication.mutations.push(yield* client.upsert(missing));
+              for (const part of chunks(missing, upsertBatchSize)) {
+                publication.mutations.push(yield* client.upsert(part));
+                yield* store.write(PUBLICATION_FILE, publication);
+              }
               // Recover IDs already present remotely even if an earlier process
               // stopped after mutation acceptance but before saving its manifest.
               publication.published = [
-                ...new Set([...publication.published, ...payload.map((vector) => vector.id)]),
+                ...new Set([...publication.published, ...allVectors.map((vector) => vector.id)]),
               ];
+              publication.state = "pending";
               yield* store.write(PUBLICATION_FILE, publication);
-              progress.update(offset + batch.length, { stage: "submitted or already present" });
-            }
-            publication.state = "pending";
-            yield* store.write(PUBLICATION_FILE, publication);
-            for (let attempt = 0; attempt < VISIBILITY_POLL_ROUNDS; attempt++) {
-              yield* this._messages.activity(
-                `Publication: checking visibility (round ${attempt + 1}/${VISIBILITY_POLL_ROUNDS})`,
-              );
-              publication.visible = [];
-              for (const vector of allVectors)
-                if (yield* client.visible(vector)) publication.visible.push(vector.id);
-              yield* store.write(PUBLICATION_FILE, publication);
-              yield* this._messages.activity(
-                `Publication: ${publication.visible.length}/${publication.expected} visible; reconciling or waiting for indexing`,
-              );
-              if (publication.visible.length === publication.expected) {
-                const ids = [
-                  ...new Set([
-                    ...(yield* client.listVectors()),
-                    ...allVectors.map((vector) => vector.id),
-                    ...publication.supersededIds!,
-                  ]),
-                ];
-                const remote: RemoteVector[] = [];
-                for (let offset = 0; offset < ids.length; offset += GET_VECTOR_BATCH_SIZE)
-                  remote.push(
-                    ...(yield* client.getVectors(
-                      ids.slice(offset, offset + GET_VECTOR_BATCH_SIZE),
-                    )),
-                  );
-                publication.reconciliation = reconcileVectors(
-                  allVectors,
-                  remote,
-                  fingerprint,
-                  publication.corpusId!,
-                  publication.supersededIds!,
+              const last = publication.mutations.at(-1);
+              if (waitForMutations && last) {
+                // Cheap readiness signal: one info read per second until the index reports
+                // our last upsert processed. Per-vector visibility is still required below;
+                // on timeout or a foreign writer the normal polling schedule takes over.
+                yield* this._messages.activity(
+                  "Publication: waiting for Vectorize to process upserts",
                 );
-                if (
-                  !publication.reconciliation.missing.length &&
-                  !publication.reconciliation.mismatched.length &&
-                  !publication.reconciliation.extra.length
-                )
-                  break;
+                const deadline = Date.now() + MUTATION_POLL_MAX_SECONDS * 1000;
+                // No reported mutation means no readiness signal: skip straight to polling.
+                let processed = yield* client.processedMutation();
+                while (processed !== undefined && processed !== last && Date.now() < deadline) {
+                  yield* Effect.sleep(`${MUTATION_POLL_INTERVAL_MS} millis`);
+                  processed = yield* client.processedMutation();
+                }
               }
-              if (attempt < VISIBILITY_POLL_ROUNDS - 1)
-                yield* Effect.sleep(
-                  `${Math.min(VISIBILITY_MAX_DELAY_SECONDS, 2 ** attempt)} seconds`,
+              const seen = new Set<string>();
+              for (let attempt = 0; attempt < VISIBILITY_POLL_ROUNDS; attempt++) {
+                yield* this._messages.activity(
+                  `Publication: checking visibility (round ${attempt + 1}/${VISIBILITY_POLL_ROUNDS})`,
                 );
+                // Only re-query vectors not yet seen; reconciliation re-reads everything.
+                const pending = allVectors.filter((vector) => !seen.has(vector.id));
+                const found = yield* Effect.forEach(pending, (vector) => client.visible(vector), {
+                  concurrency,
+                });
+                pending.forEach((vector, index) => {
+                  if (found[index]) seen.add(vector.id);
+                });
+                publication.visible = allVectors
+                  .filter((vector) => seen.has(vector.id))
+                  .map((vector) => vector.id);
+                yield* store.write(PUBLICATION_FILE, publication);
+                yield* this._messages.activity(
+                  `Publication: ${publication.visible.length}/${publication.expected} visible; reconciling or waiting for indexing`,
+                );
+                if (publication.visible.length === publication.expected && (yield* reconcile))
+                  break;
+                if (attempt < VISIBILITY_POLL_ROUNDS - 1)
+                  yield* Effect.sleep(
+                    `${Math.min(VISIBILITY_MAX_DELAY_SECONDS, 2 ** attempt)} seconds`,
+                  );
+              }
             }
             yield* this._messages.activity("Publication: checking final source currency");
             const current = yield* this._inspection.records(root);

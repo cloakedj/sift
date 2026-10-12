@@ -10,3 +10,10 @@ export const MAX_EMBEDDING_BYTES = 500;
 // A newly created index took several minutes to expose its first mutations.
 export const VISIBILITY_POLL_ROUNDS = 12;
 export const VISIBILITY_MAX_DELAY_SECONDS = 30;
+// Mutation-processing wait (opt-in): poll index info before per-vector visibility checks.
+export const MUTATION_POLL_INTERVAL_MS = 1000;
+export const MUTATION_POLL_MAX_SECONDS = 300;
+// Measured on a 175-chunk corpus: parallel reads and one large upsert cut publish time
+// 2–4×; stays well inside Cloudflare API limits (max 1000 vectors per upsert).
+export const PUBLICATION_CONCURRENCY = 8;
+export const UPSERT_BATCH_SIZE = 500;

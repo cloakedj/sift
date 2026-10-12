@@ -246,6 +246,18 @@ export class CloudflarePublicationClient {
     });
   }
 
+  /** Last asynchronous mutation the index has processed, if reported. */
+  public processedMutation() {
+    return Effect.gen(this, function* () {
+      const result = yield* this._request(
+        `/vectorize/v2/indexes/${encodeURIComponent(this._config.vectorizeIndex)}/info`,
+        { method: "GET" },
+      );
+      const mutation = (result as { processedUpToMutation?: unknown })?.processedUpToMutation;
+      return typeof mutation === "string" && mutation ? mutation : undefined;
+    });
+  }
+
   /**
    * Query visibility is stronger than mutation acceptance; unknown IDs never count.
    * Self-query top-100 is conservative: large identical-vector groups can remain

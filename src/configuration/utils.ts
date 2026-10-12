@@ -15,7 +15,11 @@ function object(value: unknown, keys: string[], section: string): Record<string,
  * Validate without echoing config contents, which may accidentally contain secrets.
  */
 export function parseConfig(value: unknown): SiftConfig {
-  const config = object(value, ["version", "discovery", "onboarding"], "configuration");
+  const config = object(
+    value,
+    ["version", "discovery", "onboarding", "publication"],
+    "configuration",
+  );
   if (config.version !== 1) Errors.raise("INVALID_ARGUMENT", "Configuration version must be 1");
   if (config.discovery !== undefined) {
     const discovery = object(
@@ -65,6 +69,33 @@ export function parseConfig(value: unknown): SiftConfig {
     for (const key of ["labelCache", "stableTaxonomy"])
       if (onboarding[key] !== undefined && typeof onboarding[key] !== "boolean")
         Errors.raise("INVALID_ARGUMENT", `onboarding.${key} must be a boolean`);
+  }
+  if (config.publication !== undefined) {
+    const publication = object(
+      config.publication,
+      ["concurrency", "upsertBatchSize", "fastNoChange", "waitForMutations"],
+      "publication",
+    );
+    if (
+      publication.concurrency !== undefined &&
+      (!Number.isInteger(publication.concurrency) ||
+        (publication.concurrency as number) < 1 ||
+        (publication.concurrency as number) > 32)
+    )
+      Errors.raise("INVALID_ARGUMENT", "publication.concurrency must be an integer from 1 to 32");
+    if (
+      publication.upsertBatchSize !== undefined &&
+      (!Number.isInteger(publication.upsertBatchSize) ||
+        (publication.upsertBatchSize as number) < 1 ||
+        (publication.upsertBatchSize as number) > 1000)
+    )
+      Errors.raise(
+        "INVALID_ARGUMENT",
+        "publication.upsertBatchSize must be an integer from 1 to 1000",
+      );
+    for (const key of ["fastNoChange", "waitForMutations"])
+      if (publication[key] !== undefined && typeof publication[key] !== "boolean")
+        Errors.raise("INVALID_ARGUMENT", `publication.${key} must be a boolean`);
   }
   return config as unknown as SiftConfig;
 }
