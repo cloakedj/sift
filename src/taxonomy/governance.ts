@@ -13,14 +13,52 @@ import {
   GOVERNANCE_VERSION,
   HARVEST_CONFIG,
   HARVEST_VERSION,
+  STICKY_GOVERNANCE,
+  TAXONOMY_ARCHIVE_FILE,
 } from "./consts.js";
 import { harvestCandidatesCooperative } from "./harvest.js";
-import type { Candidate, Dimension, Judgment, TaxonomySnapshot } from "./types.js";
+import type {
+  Candidate,
+  Dimension,
+  Judgment,
+  Label,
+  TaxonomyArchive,
+  TaxonomySnapshot,
+} from "./types.js";
 import { compareText } from "./utils.js";
+
+export interface GovernanceOptions {
+  /** Reuse judgments by candidate identity and model (onboarding.stableTaxonomy). */
+  stable?: boolean;
+  /**
+   * Sticky taxonomy (onboarding.stickyTaxonomy): keep an archive of every judgment ever made,
+   * apply promote/keep hysteresis, keep active labels whose term still occurs in the corpus even
+   * when they fall out of the candidate pool, and order evidence by repo-relative path.
+   */
+  sticky?: boolean;
+  /** Sticky mode: promotion threshold for new labels (default STICKY_GOVERNANCE.promoteConfidence). */
+  promoteConfidence?: number;
+  /**
+   * Sticky mode: how governance evidence names its resource. "relhash" (default) is an opaque hash
+   * of the repo-relative path (location-independent, no readable filename), "path" the repo-relative
+   * path itself, "hash" the absolute-URI resource ID (legacy, checkout-dependent), "none" omits it.
+   */
+  evidenceIds?: EvidenceIds;
+}
+
+export type EvidenceIds = "path" | "hash" | "relhash" | "none";
 
 class GovernanceRun {
   private readonly _snapshot: TaxonomySnapshot;
   private readonly _selected: Candidate[];
+  private readonly _byId: Map<string, Candidate>;
+  private readonly _paths: Map<string, string>;
+  private _archive: TaxonomyArchive = { schemaVersion: 1, model: "", judgments: {} };
+  private _active = new Set<string>();
+  private readonly _promoteConfidence: number;
+  private readonly _evidenceIds: EvidenceIds;
+  private readonly _stable: boolean;
+  private readonly _sticky: boolean;
   public constructor(
     inventory: Inventory,
     private readonly _jev: JevService,
@@ -28,8 +66,14 @@ class GovernanceRun {
     harvest: TaxonomySnapshot["harvest"],
     inputFingerprint: string,
     private readonly _activity?: ActivityHandle,
-    private readonly _stable = false,
+    options: GovernanceOptions = {},
   ) {
+    this._stable = options.stable === true || options.sticky === true;
+    this._sticky = options.sticky === true;
+    this._promoteConfidence = options.promoteConfidence ?? STICKY_GOVERNANCE.promoteConfidence;
+    this._evidenceIds = options.sticky ? (options.evidenceIds ?? "relhash") : "hash";
+    this._byId = new Map(harvest.candidates.map((candidate) => [candidate.id, candidate]));
+    this._paths = new Map(inventory.resources.map((resource) => [resource.id, resource.path]));
     this._snapshot = {
       schemaVersion: 1,
       inputFingerprint,
@@ -39,9 +83,7 @@ class GovernanceRun {
       labels: [],
       judgments: [],
     };
-    this._selected = harvest.selected.map((id) =>
-      harvest.candidates.find((candidate) => candidate.id === id)!,
-    );
+    this._selected = harvest.selected.map((id) => this._byId.get(id)!);
   }
   /**
    * Reuse fingerprint-matched nonfailed judgments unless reconsideration is requested.
@@ -59,6 +101,24 @@ class GovernanceRun {
           judgment,
         ]),
       );
+      if (this._sticky) {
+        const archive = yield* this._store.read<TaxonomyArchive>(TAXONOMY_ARCHIVE_FILE);
+        if (archive?.schemaVersion === 1 && archive.model === this._jev.model)
+          this._archive = archive;
+        this._archive.model = this._jev.model;
+        // Fold the previous working snapshot into the archive (also migrates pre-archive stores).
+        if (previous?.model === this._jev.model)
+          for (const judgment of previous.judgments)
+            if (judgment.status !== "failed")
+              this._archive.judgments[`${judgment.dimension}:${judgment.candidateId}`] = judgment;
+        for (const [key, judgment] of Object.entries(this._archive.judgments))
+          if (!cachedJudgments.has(key)) cachedJudgments.set(key, judgment);
+        this._active = new Set(
+          (previous?.model === this._jev.model ? previous.labels : []).map((label) =>
+            this._labelKey(label.dimension, hash(label.name)),
+          ),
+        );
+      }
       for (const dimension of DIMENSIONS) {
         const pending: Candidate[] = [];
         for (const candidate of this._selected) {
@@ -78,6 +138,19 @@ class GovernanceRun {
             dimension,
           );
       }
+      if (this._sticky) {
+        // Active labels that left the pool keep their (archived) judgment while their term still
+        // occurs somewhere in the corpus; a label is dropped only when its term disappears.
+        const present = new Set(
+          this._snapshot.judgments.map((j) => this._labelKey(j.dimension, j.candidateId)),
+        );
+        for (const key of this._active) {
+          if (present.has(key)) continue;
+          const judgment = this._archive.judgments[key];
+          const [, candidateId] = key.split(":");
+          if (judgment && this._byId.has(candidateId!)) this._snapshot.judgments.push(judgment);
+        }
+      }
       this._activity?.update(
         `Onboarding: saving taxonomy — ${this._snapshot.judgments.length} judgments`,
       );
@@ -85,10 +158,43 @@ class GovernanceRun {
       return this._snapshot;
     });
   }
+  private _labelKey(dimension: string, candidateId: string) {
+    return `${dimension}:${candidateId}`;
+  }
+  /** Hysteresis: active labels stay above keepConfidence; new labels need promoteConfidence. */
+  private _status(
+    candidate: Candidate,
+    dimension: Dimension,
+    choice: string,
+    confidence: number,
+  ): Judgment["status"] {
+    if (choice === "unsuitable") return "unsuitable";
+    if (choice !== "useful") return "pending";
+    if (!this._sticky)
+      return confidence >= GOVERNANCE_CONFIG.promotionConfidence ? "promoted" : "pending";
+    const threshold = this._active.has(this._labelKey(dimension, candidate.id))
+      ? STICKY_GOVERNANCE.keepConfidence
+      : this._promoteConfidence;
+    return confidence >= threshold ? "promoted" : "pending";
+  }
+  private _evidenceId(resourceId: string): string {
+    const path = this._paths.get(resourceId);
+    if (this._evidenceIds === "path") return path ?? resourceId;
+    if (this._evidenceIds === "relhash") return path === undefined ? resourceId : hash(path);
+    return resourceId;
+  }
+
   private _evidence(candidate: Candidate) {
     const seen = new Set<string>();
+    const key = (resourceId: string) =>
+      this._sticky ? (this._paths.get(resourceId) ?? resourceId) : resourceId;
     return [...candidate.evidence]
-      .sort((a, b) => compareText(a.resourceId, b.resourceId) || compareText(a.source, b.source))
+      .sort(
+        (a, b) =>
+          compareText(key(a.resourceId), key(b.resourceId)) ||
+          compareText(a.resourceId, b.resourceId) ||
+          compareText(a.source, b.source),
+      )
       .filter((e) => {
         if (seen.has(e.resourceId)) return false;
         seen.add(e.resourceId);
@@ -111,19 +217,23 @@ class GovernanceRun {
   }
   private _save() {
     return Effect.gen(this, function* () {
-      this._snapshot.labels = this._snapshot.judgments
-        .filter((judgment) => judgment.status === "promoted")
-        .map((judgment) => {
-          const candidate = this._selected.find((c) => c.id === judgment.candidateId)!;
-          return {
-            id: hash(`${judgment.dimension}:${candidate.name}`),
-            name: candidate.name,
-            dimension: judgment.dimension,
-          };
-        })
-        .sort((a, b) => compareText(a.id, b.id));
+      const labels = new Map<string, Label>();
+      for (const judgment of this._snapshot.judgments) {
+        if (judgment.status !== "promoted") continue;
+        const candidate = this._byId.get(judgment.candidateId)!;
+        const id = hash(`${judgment.dimension}:${candidate.name}`);
+        labels.set(id, { id, name: candidate.name, dimension: judgment.dimension });
+      }
+      this._snapshot.labels = [...labels.values()].sort((a, b) => compareText(a.id, b.id));
       this._snapshot.version = hash(JSON.stringify(this._snapshot.labels));
       yield* this._store.write("taxonomy.json", this._snapshot);
+      if (this._sticky) {
+        for (const judgment of this._snapshot.judgments)
+          if (judgment.status !== "failed")
+            this._archive.judgments[this._labelKey(judgment.dimension, judgment.candidateId)] =
+              judgment;
+        yield* this._store.write(TAXONOMY_ARCHIVE_FILE, this._archive);
+      }
     });
   }
   private _request(batch: Candidate[], dimension: Dimension): SystemOneRequest<Questions> {
@@ -139,7 +249,8 @@ class GovernanceRun {
           key: `candidate${i}`,
           name: candidate.name,
           evidence: this._evidence(candidate).map((e) => ({
-            resourceId: e.resourceId,
+            // Sticky mode names evidence by repo-relative path so prompts do not depend on checkout location.
+            ...(this._evidenceIds === "none" ? {} : { resourceId: this._evidenceId(e.resourceId) }),
             source: e.source,
             snippet: e.snippet,
           })),
@@ -196,13 +307,7 @@ class GovernanceRun {
               candidateId: candidate.id,
               dimension,
               fingerprint: this._fingerprint(candidate, dimension),
-              status:
-                answer.choice === "unsuitable"
-                  ? "unsuitable"
-                  : answer.choice === "useful" &&
-                      answer.confidence >= GOVERNANCE_CONFIG.promotionConfidence
-                    ? "promoted"
-                    : "pending",
+              status: this._status(candidate, dimension, answer.choice, answer.confidence),
               choice: answer.choice,
               confidence: answer.confidence,
               probabilities: answer.probabilities,
@@ -242,8 +347,9 @@ export class TaxonomyService {
     store: LocalStore,
     rerun = false,
     activity?: ActivityHandle,
-    stable = false,
+    options: GovernanceOptions | boolean = {},
   ) {
+    const settings = typeof options === "boolean" ? { stable: options } : options;
     return Effect.gen(this, function* () {
       const inputFingerprint = hash(
         JSON.stringify({
@@ -252,6 +358,16 @@ export class TaxonomyService {
           harvesting: HARVEST_VERSION,
           governanceConfig: GOVERNANCE_CONFIG,
           harvestConfig: HARVEST_CONFIG,
+          ...(settings.sticky
+            ? {
+                sticky: {
+                  ...STICKY_GOVERNANCE,
+                  promoteConfidence:
+                    settings.promoteConfidence ?? STICKY_GOVERNANCE.promoteConfidence,
+                  evidenceIds: settings.evidenceIds ?? "relhash",
+                },
+              }
+            : {}),
           chunker: inventory.chunkerVersion,
           resources: inventory.resources,
           chunks: inventory.chunks.map((chunk) => chunk.id),
@@ -271,7 +387,9 @@ export class TaxonomyService {
         `Onboarding: harvesting taxonomy candidates from ${inventory.resources.length} resources`,
       );
       yield* Effect.yieldNow();
-      const harvest = yield* harvestCandidatesCooperative(inventory);
+      const harvest = yield* harvestCandidatesCooperative(inventory, HARVEST_CONFIG, {
+        pathOrder: settings.sticky === true,
+      });
       const run = yield* Errors.attempt(
         () =>
           new GovernanceRun(
@@ -281,7 +399,7 @@ export class TaxonomyService {
             harvest,
             inputFingerprint,
             activity,
-            stable,
+            settings,
           ),
         "INVALID_DATA",
       );

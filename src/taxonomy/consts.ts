@@ -31,6 +31,16 @@ export const GOVERNANCE_CONFIG = {
   maxPayloadBytes: 16 * 1024,
   promotionConfidence: 0.8,
 };
+/**
+ * Sticky governance (onboarding.stickyTaxonomy): hysteresis so labels near the promotion
+ * threshold do not flip on run-to-run noise. New labels need >= promote; an active label is
+ * dropped only when re-judged below keep (or judged unsuitable) or when its term disappears.
+ */
+export const STICKY_GOVERNANCE = {
+  promoteConfidence: 0.85,
+  keepConfidence: 0.7,
+};
+export const TAXONOMY_ARCHIVE_FILE = "taxonomy-archive.json";
 export const FRONT_MATTER_FIELDS = new Set([
   "title",
   "description",

@@ -112,6 +112,17 @@ class FrontMatterParser {
   }
 }
 
+export interface HarvestOptions {
+  /**
+   * Order resources by repo-relative path instead of the absolute-URI hash when selecting the
+   * candidate pool, so the same content selects the same candidates at any checkout location.
+   */
+  pathOrder?: boolean;
+}
+/** Repo-relative sort key per resource ID, independent of where the corpus is checked out. */
+export const resourcePathOrder = (inventory: Inventory) =>
+  new Map(inventory.resources.map((resource) => [resource.id, resource.path]));
+
 interface EvidencePosition {
   startByte: number;
   endByte: number;
@@ -127,6 +138,7 @@ class CandidateHarvester {
   public constructor(
     private readonly _inventory: Inventory,
     private readonly _config: HarvestConfig,
+    private readonly _options: HarvestOptions = {},
   ) {
     this._texts = resourceTexts(_inventory);
   }
@@ -363,6 +375,7 @@ class CandidateHarvester {
     const selected = selectCandidates(
       candidates.filter((c) => eligible.has(c.id)),
       this._config,
+      this._options.pathOrder ? resourcePathOrder(this._inventory) : undefined,
     );
     const selectedSet = new Set(selected);
     return {
@@ -383,13 +396,15 @@ class CandidateHarvester {
 export function harvestCandidates(
   inventory: Inventory,
   config: HarvestConfig = HARVEST_CONFIG,
+  options: HarvestOptions = {},
 ): Harvest {
-  return new CandidateHarvester(inventory, config).run();
+  return new CandidateHarvester(inventory, config, options).run();
 }
 
 export function harvestCandidatesCooperative(
   inventory: Inventory,
   config: HarvestConfig = HARVEST_CONFIG,
+  options: HarvestOptions = {},
 ) {
-  return new CandidateHarvester(inventory, config).runCooperative();
+  return new CandidateHarvester(inventory, config, options).runCooperative();
 }

@@ -118,6 +118,25 @@ The report includes selected candidate evidence counts/sources/examples, overflo
 
 Validation: 28 credential-free tests passed, plus typecheck and build. A local mixed-fixture cache inspection reported complete records with pending governance findings and no new provider calls. No new real-service Jev or Cloudflare evidence is claimed for this validation-view change. A subsequent correction counts normalized score 1 (not 2) as the central endpoint; intermediate positive scores count as secondary in this diagnostic summary, not as calibrated relevance categories.
 
+## Sticky taxonomy governance — on by default; measured on jev and ky
+
+`onboarding.stickyTaxonomy` (default `true`) archives every governance judgment (`.sift/taxonomy-archive.json`), promotes new labels at ≥ 0.85 and keeps active labels at ≥ 0.7, keeps active labels that leave the 200-candidate pool while their term still occurs, and orders candidates and evidence by repo-relative path. `onboarding.stickyEvidenceIds` (default `"relhash"`) names governance evidence by an opaque hash of the repo-relative path. `"path"`, `"hash"` and `"none"` remain available, and `stickyPromoteConfidence` tunes the 0.85 threshold. See [configuration](configuration.md#sticky-taxonomy).
+
+Root cause addressed: candidate selection was capped at 200 per dimension and ordered by absolute-URI hash, so edits and relocations changed the pool. Judgments evicted from the pool were forgotten, and labels near the single 0.8 threshold flipped with Jev run-to-run noise. Each flipped or new label re-asked every chunk (about 90–100k tokens on jev, 370–400k on ky).
+
+Evidence comes from frozen jev@9ebdb70 and ky@3541888 corpora with a fixed edit sequence (nochange, edit1, edit5, add, delete, rename), throwaway Vectorize indexes, and per-run Jev token accounting:
+- **Edit-step Jev input tokens.** jev: 155,814 → 51,706 (−67%), with 0 repo-wide re-asks instead of 1. ky: 451,966 → 365,093 (−19%). The remaining ky cost is the `add` step, which introduces a genuinely new label.
+- **Search, previous behavior vs relhash.** ky final MRR 0.693 → 0.705; R@5 0.879 → 0.871 (−1 of 62 queries, within the previous behavior's own 1-query run-to-run spread); R@8 unchanged at 0.919. jev MRR 0.765 and R@5 0.929 are unchanged.
+- **Stability.** jev labels are 100% identical across reps and across two checkout paths. Governance prompts are token-identical at both paths. ky cross-path label overlap is 0.85 (previous behavior 0.42), which matches same-path run-to-run overlap: the remainder is Jev nondeterminism in the first governance.
+- **Why relhash.** Readable relative paths (`"path"`) shifted the ky taxonomy, giving R@5 0.847. Absolute hashes (`"hash"`) drift when the repository moves (ky R@5 0.839 at an alternate path). No IDs at all collapsed the ky taxonomy to 8–11 labels. A lower 0.80 threshold did not help.
+- **Caveat.** ky query k15 (gold `readme.md` 1648–1669) ranks 6 in every sticky run on the experiment stack, vs 3 before. Its R@5 miss is the remaining gap. 64-hex IDs also cost about 20% more governance tokens on jev edits than paths do; shorter IDs are a possible follow-up.
+- **Ship regression check** on this main (BM25 hybrid search, verify cache), one run each, default config, same frozen corpora:
+  - jev: edit-step tokens 155,814 → 51,706 (re-asks 1 → 0), edit-step onboarding time 32.5 s → 16.3 s, final MRR 0.744 → 0.753, R@5 0.919 → 0.934. Per-step tokens and labels are identical to the experiment's relhash runs.
+  - ky: edit-step tokens 452,564 → 349,520 (−23%), final MRR 0.686 → 0.684, R@5 0.887 → 0.871, R@8 0.919 → 0.919. Label overlap with the experiment's relhash runs is 0.74–0.79, matching their run-to-run 0.72.
+  - jev and ky ran concurrently and full-onboarding answers were seeded across runs, so first-onboarding tokens and publish times are not comparable.
+
+Validation: credential-free tests (`tests/taxonomy-stability.test.ts`) cover path-independent selection and evidence, the archive and hysteresis, labels that leave the pool, and each `stickyEvidenceIds` mode. They also check that `relhash` is identical at two absolute roots and differs from both the path and the absolute hash.
+
 ## Query intent — implemented; real-service mechanics demonstrated
 
 ```bash

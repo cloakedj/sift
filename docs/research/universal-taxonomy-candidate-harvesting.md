@@ -71,7 +71,7 @@ Recommended initial caps, to tune after checkpoints:
 1. Confirm the exact initial caps above, especially global Jev governance pool size.
 2. Choose whether front matter is MVP for all Markdown-like files or only for known extensions (`.md`, `.mdx`).
 3. Approve the local scoring weights per source kind before implementation.
-4. Choose how uncertain candidate judgments are retained/deferred within the already-approved automatic, soft, reversible taxonomy governance. Mandatory human review is not an approved requirement.
-5. Define overflow/fairness behavior for candidate caps across large resources and mixed corpora so the first or most frequent files do not exhaust the pool and suppress rare useful terms.
+4. Choose how uncertain candidate judgments are retained/deferred within the already-approved automatic, soft, reversible taxonomy governance. Mandatory human review is not an approved requirement. *Implemented as sticky governance (default): every judgment is archived, and promotion uses hysteresis (new labels at ≥ 0.85, active labels kept at ≥ 0.7). Active labels that leave the pool stay while their term still occurs. See [configuration](../configuration.md#sticky-taxonomy).*
+5. Define overflow/fairness behavior for candidate caps across large resources and mixed corpora so the first or most frequent files do not exhaust the pool and suppress rare useful terms. *Partly addressed: in sticky mode the round-robin over resources is ordered by repo-relative path, so the selected pool no longer depends on the checkout location. The cap itself is unchanged.*
 
 All budgets, source weights, and core extraction recommendations above are proposals, not user-approved implementation choices. The comparison table expresses expected fit, not measured quality on this project's fixtures.

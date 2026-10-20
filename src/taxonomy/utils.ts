@@ -46,7 +46,13 @@ export const identifierForms = (value: string) => [
  * within each source-priority tier. Rank by global frequency within each resource;
  * code-point ordering keeps results independent of locale and discovery order.
  */
-export function selectCandidates(candidates: Candidate[], config: HarvestConfig) {
+export function selectCandidates(
+  candidates: Candidate[],
+  config: HarvestConfig,
+  /** Optional stable sort key per resource ID (e.g. repo-relative path); defaults to the ID. */
+  order?: ReadonlyMap<string, string>,
+) {
+  const key = (resourceId: string) => order?.get(resourceId) ?? resourceId;
   const frequencies = new Map<string, number>();
   const sources = new Map<string, Set<CandidateSource>>();
   const resourcesBySource = new Map<CandidateSource, Set<string>>();
@@ -78,7 +84,7 @@ export function selectCandidates(candidates: Candidate[], config: HarvestConfig)
   const buildQueues = (pool: Candidate[], source: CandidateSource) => {
     const poolIds = new Set(pool.map((candidate) => candidate.id));
     return [...(resourcesBySource.get(source) ?? [])]
-      .sort(compareText)
+      .sort((a, b) => compareText(key(a), key(b)) || compareText(a, b))
       .map((resource) =>
         (candidatesBySourceResource.get(`${source}\0${resource}`) ?? []).filter((candidate) =>
           poolIds.has(candidate.id),

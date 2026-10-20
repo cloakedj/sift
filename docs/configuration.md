@@ -86,6 +86,11 @@ These rules are not a complete secret detector or OS access sandbox. Review dry-
 | `limit` | No limit | Positive integer cap on classified/reused chunks for this run. Remaining chunks are deferred and the run is incomplete. |
 | `concurrency` | `3` | Positive integer classification concurrency. |
 | `rerunGovernance` | `false` | Rerun taxonomy governance instead of reusing saved decisions. |
+| `labelCache` | `true` | Reuse per-label Jev answers keyed by chunk content and question, so a taxonomy change only asks about new labels. |
+| `stableTaxonomy` | `true` | Reuse taxonomy judgments per candidate identity; only newly harvested candidates are judged. |
+| `stickyTaxonomy` | `true` | Sticky governance (see below). Set `false` for the previous behavior. |
+| `stickyEvidenceIds` | `"relhash"` | Sticky mode only: how governance evidence names its source file. `"relhash"`, `"path"`, `"hash"` or `"none"` (see below). |
+| `stickyPromoteConfidence` | `0.85` | Sticky mode only: Jev confidence a new label needs to be promoted, a number in (0, 1]. Active labels stay while confidence is at least 0.7. |
 
 Explicit CLI/programmatic options override config values, which override built-in defaults:
 
@@ -94,9 +99,33 @@ npm run cli -- onboard . --limit 25 --concurrency 2
 npm run cli -- onboard . --no-rerun-governance
 ```
 
+### Sticky taxonomy
+
+With `stickyTaxonomy` (default `true`), taxonomy governance keeps labels stable across edits and checkout locations:
+
+- Every judgment is archived in `.sift/taxonomy-archive.json`, so a candidate that leaves the bounded candidate pool and later returns is not re-judged and does not flip.
+- Promotion uses hysteresis: a new label needs confidence of at least `stickyPromoteConfidence` (0.85), and an active label is kept while it stays at or above 0.7. This prevents labels from flipping near a single threshold because of Jev run-to-run noise.
+- Active labels whose term still occurs in the corpus stay active even when they drop out of the 200-candidate pool.
+- Candidates and evidence are ordered by repo-relative path instead of by absolute-URI hash, so the selected pool does not depend on where the repository is checked out.
+
+Without it, every edit that shifted the candidate pool could add or drop labels, and each new label re-asks every chunk. Measured on the Sift (jev) and ky benchmark corpora, sticky governance cut Jev input tokens on edit steps by 67% on jev (155,814 → 51,706, no repo-wide re-asks) and 19% on ky. Search quality was unchanged within run noise.
+
+`stickyEvidenceIds` controls how the evidence snippets sent to Jev during governance name their source file:
+
+- `"relhash"` (default): an opaque SHA-256 of the repo-relative path. It is identical at any checkout location and shows no readable filename.
+- `"path"`: the repo-relative path. Also location-independent, but the readable filenames shifted the ky taxonomy and cost 1–2 of 62 queries at R@5 (0.847 vs 0.879).
+- `"hash"`: the legacy absolute-URI resource ID. It changes when the repository moves; on ky an alternate checkout path dropped R@5 to 0.839.
+- `"none"`: no source name. Not recommended: the ky taxonomy collapsed to 8–11 labels.
+
+`"relhash"` is the default because it was the only option that kept ky R@5 within noise of the previous behavior (0.871 vs 0.879) and produced identical governance prompts at two checkout paths. Changing any sticky option, or upgrading from a release without sticky governance, reruns governance once on the next onboarding.
+
+```json
+{ "version": 1, "onboarding": { "stickyTaxonomy": true, "stickyEvidenceIds": "relhash" } }
+```
+
 `--rerun-governance` and `--no-rerun-governance` are mutually exclusive. Dry runs validate the whole config but ignore its onboarding settings; explicit classification/governance flags with `--dry-run` are rejected. Avoid a persistent `limit` unless you intentionally want incomplete onboarding.
 
-Provider selection, credentials, chunker limits, taxonomy thresholds, and publication settings are not configuration-file options in this version. Unknown keys, unsupported versions, malformed JSON, and invalid option types fail explicitly rather than silently falling back.
+Provider selection, credentials, chunker limits, taxonomy thresholds (other than `stickyPromoteConfidence`), and publication settings are not configuration-file options in this version. Unknown keys, unsupported versions, malformed JSON, and invalid option types fail explicitly rather than silently falling back.
 
 ## Alternate configuration and shared scope
 

@@ -108,7 +108,12 @@ export class OnboardingService {
           store,
           rerunGovernance,
           governance,
-          configured?.stableTaxonomy !== false,
+          {
+            stable: configured?.stableTaxonomy !== false,
+            sticky: configured?.stickyTaxonomy !== false,
+            promoteConfidence: configured?.stickyPromoteConfidence,
+            evidenceIds: configured?.stickyEvidenceIds,
+          },
         );
         mark("taxonomy-governance");
         yield* this._messages.stage(

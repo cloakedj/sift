@@ -65,3 +65,9 @@ export interface TaxonomySnapshot {
   labels: Label[];
   judgments: Judgment[];
 }
+/** Every non-failed governance judgment ever made for a corpus, keyed by "dimension:candidateId". */
+export interface TaxonomyArchive {
+  schemaVersion: 1;
+  model: string;
+  judgments: Record<string, Judgment>;
+}

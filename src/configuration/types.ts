@@ -16,6 +16,12 @@ export interface SiftConfig {
     labelCache?: boolean;
     /** Default true. Reuse taxonomy judgments per candidate identity; only newly harvested candidates are judged. Set false (or use rerunGovernance) to re-judge everything. */
     stableTaxonomy?: boolean;
+    /** Default true. Archive every taxonomy judgment, promote new labels at >= 0.85 and keep active ones above 0.7, keep active labels that leave the candidate pool while their term still occurs, and order candidates/evidence by repo-relative path. */
+    stickyTaxonomy?: boolean;
+    /** Sticky mode only: promotion threshold for new labels (default 0.85). */
+    stickyPromoteConfidence?: number;
+    /** Sticky mode only: how governance evidence names its resource: "relhash" (default; opaque hash of the repo-relative path), "path" (repo-relative path), "hash" (absolute-URI ID, checkout-dependent) or "none". */
+    stickyEvidenceIds?: "path" | "hash" | "relhash" | "none";
   };
   search?: {
     /** Hybrid fusion of semantic and lexical discovery lanes. */

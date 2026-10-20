@@ -55,7 +55,16 @@ export function parseConfig(value: unknown): SiftConfig {
   if (config.onboarding !== undefined) {
     const onboarding = object(
       config.onboarding,
-      ["limit", "concurrency", "rerunGovernance", "labelCache", "stableTaxonomy"],
+      [
+        "limit",
+        "concurrency",
+        "rerunGovernance",
+        "labelCache",
+        "stableTaxonomy",
+        "stickyTaxonomy",
+        "stickyPromoteConfidence",
+        "stickyEvidenceIds",
+      ],
       "onboarding",
     );
     for (const key of ["limit", "concurrency"])
@@ -66,9 +75,26 @@ export function parseConfig(value: unknown): SiftConfig {
         Errors.raise("INVALID_ARGUMENT", `onboarding.${key} must be a positive integer`);
     if (onboarding.rerunGovernance !== undefined && typeof onboarding.rerunGovernance !== "boolean")
       Errors.raise("INVALID_ARGUMENT", "onboarding.rerunGovernance must be a boolean");
-    for (const key of ["labelCache", "stableTaxonomy"])
+    for (const key of ["labelCache", "stableTaxonomy", "stickyTaxonomy"])
       if (onboarding[key] !== undefined && typeof onboarding[key] !== "boolean")
         Errors.raise("INVALID_ARGUMENT", `onboarding.${key} must be a boolean`);
+    if (
+      onboarding.stickyPromoteConfidence !== undefined &&
+      (typeof onboarding.stickyPromoteConfidence !== "number" ||
+        !(onboarding.stickyPromoteConfidence > 0 && onboarding.stickyPromoteConfidence <= 1))
+    )
+      Errors.raise(
+        "INVALID_ARGUMENT",
+        "onboarding.stickyPromoteConfidence must be a number in (0, 1]",
+      );
+    if (
+      onboarding.stickyEvidenceIds !== undefined &&
+      !["path", "hash", "relhash", "none"].includes(onboarding.stickyEvidenceIds as string)
+    )
+      Errors.raise(
+        "INVALID_ARGUMENT",
+        'onboarding.stickyEvidenceIds must be "path", "hash", "relhash" or "none"',
+      );
   }
   if (config.publication !== undefined) {
     const publication = object(
