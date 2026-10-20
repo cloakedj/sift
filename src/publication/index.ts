@@ -1,3 +1,4 @@
+import { VerificationCache } from "../retrieval/verification/index.js";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { Context, Effect, Layer } from "effect";
@@ -54,6 +55,9 @@ export class PublicationService {
       Effect.gen(this, function* () {
         yield* this._messages.activity("Publication: authenticating and inspecting records");
         const config = yield* new CloudflareAuthService().config();
+        // A publish always invalidates the cached index verification; it is also keyed on the
+        // publication, so a newly verified publication can never reuse it.
+        yield* new VerificationCache(yield* stateDirectory(this._fs, root), this._fs).clear();
         const tuning = (yield* new ConfigurationService(this._fs).load(root)).config.publication;
         const concurrency = tuning?.concurrency ?? PUBLICATION_CONCURRENCY;
         const upsertBatchSize = tuning?.upsertBatchSize ?? UPSERT_BATCH_SIZE;

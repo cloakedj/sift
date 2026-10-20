@@ -20,6 +20,8 @@ export interface SiftConfig {
   search?: {
     /** Hybrid fusion of semantic and lexical discovery lanes. */
     fusion?: FusionOptions;
+    /** Default true. Reuse the Cloudflare index verification of the active publication for up to one hour; re-verified after publish, configuration change, or any Cloudflare rejection. */
+    verifyCache?: boolean;
   };
   publication?: {
     /** Default 8. Parallel Vectorize reads/visibility checks; 1 = sequential. */

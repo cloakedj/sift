@@ -98,7 +98,9 @@ export function parseConfig(value: unknown): SiftConfig {
         Errors.raise("INVALID_ARGUMENT", `publication.${key} must be a boolean`);
   }
   if (config.search !== undefined) {
-    const search = object(config.search, ["fusion"], "search");
+    const search = object(config.search, ["fusion", "verifyCache"], "search");
+    if (search.verifyCache !== undefined && typeof search.verifyCache !== "boolean")
+      Errors.raise("INVALID_ARGUMENT", "search.verifyCache must be a boolean");
     if (search.fusion !== undefined) {
       const fusion = object(
         search.fusion,

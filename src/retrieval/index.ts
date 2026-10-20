@@ -29,6 +29,9 @@ import type { StagedAssessmentTrace } from "./diagnostics/types.js";
 import { MAX_ANCHORS, MAX_ANCHOR_BYTES } from "./discovery/consts.js";
 import { orderEvidence } from "./utils.js";
 import { ConfigurationService } from "../configuration/index.js";
+import { stateDirectory } from "../publication/utils.js";
+import { VerificationCache } from "./verification/index.js";
+import { verificationKey } from "./verification/utils.js";
 import { FileSystem, type FileSystemService } from "../filesystem/index.js";
 import { MAX_QUERY_TOP_K, MAX_EMBEDDING_BYTES } from "../publication/consts.js";
 
@@ -160,23 +163,68 @@ export class RetrievalService {
           "PAYLOAD_LIMIT",
           "Query embedding document exceeds the conservative 500-byte guardrail",
         );
-      const config = yield* new CloudflareAuthService().config();
+      const searchConfig = this._fs
+        ? (yield* new ConfigurationService(this._fs).load(root)).config.search
+        : undefined;
+      // Index verification is reused per verified publication and Cloudflare configuration
+      // (search.verifyCache, default on). A cached target skips account discovery and the
+      // index check; any Cloudflare rejection on that path drops it, re-verifies fully and
+      // retries once, so failures surface exactly as without the cache.
+      const state =
+        this._fs && searchConfig?.verifyCache !== false
+          ? yield* stateDirectory(this._fs, root).pipe(Effect.orElseSucceed(() => undefined))
+          : undefined;
+      const verification =
+        this._fs && state
+          ? { cache: new VerificationCache(state, this._fs), key: verificationKey(publication) }
+          : undefined;
+      const trusted = verification ? yield* verification.cache.get(verification.key) : undefined;
+      const connect = (target?: { accountId: string }) =>
+        Effect.gen(function* () {
+          const config = yield* new CloudflareAuthService().config(target);
+          if (
+            config.accountId !== publication.vectorBackend.accountId ||
+            config.vectorizeIndex !== publication.vectorBackend.index ||
+            config.model !== publication.embeddingSpace.model
+          )
+            return yield* Errors.fail(
+              "CONFIGURATION",
+              "Cloudflare configuration does not match the active publication",
+            );
+          mark("cloudflare-auth");
+          const client = new CloudflarePublicationClient(config);
+          if (!target) {
+            yield* client.verifyIndex();
+            if (verification) yield* verification.cache.put(verification.key, config);
+          }
+          mark(target ? "vector-index-verification-cached" : "vector-index-verification");
+          return { config, client };
+        });
+      const lookup = (client: CloudflarePublicationClient) =>
+        Effect.gen(function* () {
+          const [queryVector] = yield* client.embed([intentResult.intent.embeddingDocument]);
+          mark("query-embedding");
+          const matches = yield* client.query(queryVector!, publication.namespace, candidateLimit);
+          mark("vector-query");
+          return { matches, queryVector: queryVector! };
+        });
+      let reverified = false;
+      let connected = yield* connect(trusted);
+      let attempt = yield* Effect.either(lookup(connected.client));
       if (
-        config.accountId !== publication.vectorBackend.accountId ||
-        config.vectorizeIndex !== publication.vectorBackend.index ||
-        config.model !== publication.embeddingSpace.model
-      )
-        return yield* Errors.fail(
-          "CONFIGURATION",
-          "Cloudflare configuration does not match the active publication",
-        );
-      const client = new CloudflarePublicationClient(config);
-      yield* client.verifyIndex();
-      mark("vector-index-verification");
-      const [queryVector] = yield* client.embed([intentResult.intent.embeddingDocument]);
-      mark("query-embedding");
-      const matches = yield* client.query(queryVector!, publication.namespace, candidateLimit);
-      mark("vector-query");
+        attempt._tag === "Left" &&
+        trusted &&
+        verification &&
+        ["CLOUDFLARE", "CLOUDFLARE_RESPONSE", "CONFIGURATION"].includes(attempt.left.code)
+      ) {
+        yield* verification.cache.clear();
+        reverified = true;
+        connected = yield* connect();
+        attempt = yield* Effect.either(lookup(connected.client));
+      }
+      if (attempt._tag === "Left") return yield* Effect.fail(attempt.left);
+      const config = connected.config;
+      const { matches, queryVector } = attempt.right;
       const inspected = yield* this._inspection.records(root);
       const finalStatus = yield* this._publication.status(root);
       mark("result-validation");
@@ -194,7 +242,15 @@ export class RetrievalService {
       const byVector = new Map(
         inspected.records.map((record) => [vectorId(publication.fingerprint, record.id), record]),
       );
-      const findings: SearchReport["findings"] = [];
+      const findings: SearchReport["findings"] = reverified
+        ? [
+            {
+              severity: "info",
+              message:
+                "Cached index verification was rejected by Cloudflare; re-verified and retried once",
+            },
+          ]
+        : [];
       const results: SearchReport["results"] = [];
       const seen = new Set<string>();
       for (const match of [...matches].sort(
@@ -211,7 +267,7 @@ export class RetrievalService {
         const expected = {
           id: match.id,
           namespace: publication.namespace,
-          values: queryVector!,
+          values: queryVector,
           metadata: vectorMetadata(record, publication.corpusId!, publication.embeddingSpaceId!),
         };
         if (!metadataMatches(expected, match))
@@ -232,12 +288,7 @@ export class RetrievalService {
           },
         });
       }
-      const fusion = resolveFusion(
-        this._fs
-          ? (yield* new ConfigurationService(this._fs).load(root)).config.search?.fusion
-          : undefined,
-        options.lexicalScorer,
-      );
+      const fusion = resolveFusion(searchConfig?.fusion, options.lexicalScorer);
       const discovery = hybrid
         ? discoverCandidates(query, inspected.records, results, candidateLimit, anchors, {
             strategy,

@@ -67,6 +67,7 @@ test("strict versioned configuration rejects unknown, invalid and escaping optio
     { version: 1, search: { fusion: { alpha: 2 } } },
     { version: 1, search: { fusion: { rrfK: 0 } } },
     { version: 1, search: { fusion: { route: "yes" } } },
+    { version: 1, search: { verifyCache: "false" } },
     { version: 1, search: { other: true } },
     { version: 1, publication: { unknown: true } },
   ])
@@ -79,6 +80,10 @@ test("strict versioned configuration rejects unknown, invalid and escaping optio
         return true;
       },
     );
+  assert.deepEqual(parseConfig({ version: 1, search: { verifyCache: false } }), {
+    version: 1,
+    search: { verifyCache: false },
+  });
   assert.deepEqual(
     parseConfig({ version: 1, onboarding: { labelCache: false, stableTaxonomy: true } }),
     { version: 1, onboarding: { labelCache: false, stableTaxonomy: true } },

@@ -126,6 +126,8 @@ Options:
 - `--agent --json`: emit compact machine-oriented search output with citations, bounded previews, evidence status, and coverage warnings. `--agent` requires `--json`.
 - `--json`: emit the full structured result.
 
+Index verification is cached: the first search after a publish checks the Vectorize index (dimensions and metric) and the account, then later searches reuse that result for up to one hour. That saves about a second per search. The cache lives in `.sift/verified-target.json` and never holds credentials. `publish`, a new publication, or a change to `CLOUDFLARE_VECTORIZE_INDEX`/`CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_WORKERS_AI_MODEL` invalidates it. If Cloudflare rejects a search made with a cached verification, the search re-verifies and retries once. JSON `timings` report `vector-index-verification` or `vector-index-verification-cached`. Disable it with `"search": { "verifyCache": false }` in `sift.config.json` (see [configuration](../../docs/configuration.md#search-options)). Setting `CLOUDFLARE_API_TOKEN` also skips the per-search `wrangler auth token` call (about 0.4 s).
+
 Examples:
 
 ```sh

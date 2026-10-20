@@ -364,6 +364,69 @@ test("semantic search returns source-linked active publication matches from cach
     assert.equal(noCandidates.evidence.state, "insufficient");
     assert.equal(noCandidates.coverage.assessedPrimaryCandidates, 0);
     globalThis.fetch = semanticFetch;
+    const verifiedTarget = join(root, ".sift", "verified-target.json");
+    let indexChecks = 0;
+    let failQueries = 0;
+    let indexDeleted = false;
+    globalThis.fetch = (async (url, init) => {
+      if (init?.method === "GET") {
+        indexChecks++;
+        if (indexDeleted)
+          return Response.json({ success: false, errors: [{ code: 3000 }] }, { status: 404 });
+      }
+      if (String(url).endsWith("/query") && (indexDeleted || failQueries-- > 0))
+        return Response.json({ success: false, errors: [{ code: 3000 }] }, { status: 404 });
+      return semanticFetch(url, init);
+    }) as typeof fetch;
+    await rm(verifiedTarget, { force: true });
+    const verified = await search();
+    assert.equal(indexChecks, 1);
+    assert.ok(verified.timings.some((timing) => timing.stage === "vector-index-verification"));
+    const cachedEntry = await readFile(verifiedTarget, "utf8");
+    assert.ok(!cachedEntry.includes(config.apiToken), "verification cache must not store tokens");
+    const cached = await search();
+    assert.equal(indexChecks, 1);
+    assert.ok(cached.timings.some((timing) => timing.stage === "vector-index-verification-cached"));
+    assert.deepEqual(
+      cached.results.map((hit) => hit.vectorId),
+      verified.results.map((hit) => hit.vectorId),
+    );
+    process.env.CLOUDFLARE_VECTORIZE_INDEX = "other-index";
+    await assert.rejects(search(), /does not match the active publication/);
+    process.env.CLOUDFLARE_VECTORIZE_INDEX = config.vectorizeIndex;
+    failQueries = 1;
+    const retried = await search();
+    assert.equal(indexChecks, 2);
+    assert.ok(
+      retried.findings.some((finding) => /re-verified and retried once/.test(finding.message)),
+    );
+    assert.deepEqual(
+      retried.results.map((hit) => hit.vectorId),
+      verified.results.map((hit) => hit.vectorId),
+    );
+    indexDeleted = true;
+    await assert.rejects(search(), /Cloudflare request failed/);
+    await assert.rejects(readFile(verifiedTarget, "utf8"));
+    indexDeleted = false;
+    await search();
+    await readFile(verifiedTarget, "utf8");
+    await Effect.runPromise(
+      publishVectors(root).pipe(Effect.provide(PublicationLive), Effect.provide(LocalRuntimeLive)),
+    );
+    await assert.rejects(readFile(verifiedTarget, "utf8"), "publish must invalidate verification");
+    const checksBeforeRepublishedSearch = indexChecks;
+    await search();
+    assert.equal(indexChecks, checksBeforeRepublishedSearch + 1);
+    await writeFile(
+      join(root, "sift.config.json"),
+      JSON.stringify({ version: 1, search: { verifyCache: false } }),
+    );
+    const checksWithoutCache = indexChecks;
+    await search();
+    await search();
+    assert.equal(indexChecks, checksWithoutCache + 2);
+    await rm(join(root, "sift.config.json"));
+    globalThis.fetch = semanticFetch;
     process.env.CLOUDFLARE_VECTORIZE_INDEX = "other-index";
     await assert.rejects(search(), /does not match the active publication/);
     process.env.CLOUDFLARE_VECTORIZE_INDEX = config.vectorizeIndex;

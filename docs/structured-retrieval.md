@@ -90,6 +90,18 @@ Query embeddings keep the raw question, inferred intent/answer shape, and positi
 terms. Taxonomy judgments remain available to the reranker but are no longer all
 injected into the embedding merely because their probability is nonzero.
 
+## Remote index verification
+
+Before querying Vectorize, search checks that the configured account, index and model match
+the active publication, and that the remote index still has 768 dimensions and cosine
+distance. By default (`search.verifyCache`) a successful check is reused for up to one
+hour. The reuse key is the verified publication plus the Cloudflare configuration, and
+`publish` clears it. A Cloudflare rejection on a cached path triggers one full
+re-verification and retry. Credentials are never cached. Result validation after the
+query (vector IDs, namespace, metadata, publication and source currency) always runs.
+Even with this cache, an index that is externally recreated empty with the same shape is
+not detected before the query.
+
 ## Shared hybrid discovery and anchors
 
 Search defaults to hybrid discovery over the active, source-current publication.

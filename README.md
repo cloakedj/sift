@@ -45,7 +45,7 @@ If Wrangler cannot infer the account, also set:
 export CLOUDFLARE_ACCOUNT_ID=<account-id>
 ```
 
-Alternatively, set `CLOUDFLARE_API_TOKEN` with access to Workers AI and Vectorize.
+Alternatively, set `CLOUDFLARE_API_TOKEN` with access to Workers AI and Vectorize. It also makes each command skip the `wrangler auth token` call, so searches are faster. With `CLOUDFLARE_ACCOUNT_ID` set too, Wrangler is not invoked at all. Searches cache the index verification for an hour (see `search.verifyCache` in [configuration](docs/configuration.md#search-options)).
 
 Then publish vectors before semantic search:
 

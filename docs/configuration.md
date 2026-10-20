@@ -73,6 +73,12 @@ These rules are not a complete secret detector or OS access sandbox. Review dry-
 
 `search --lexical-scorer bm25|legacy|none` overrides `lexicalScorer` for one search; `none` is dense-only.
 
+`search.verifyCache` (default `true`) controls the index verification cache. Before its first Cloudflare query for the active publication, search checks the remote Vectorize index (768 dimensions, cosine) and, when no `CLOUDFLARE_ACCOUNT_ID` is set, discovers the account with `wrangler whoami`. With the cache on, a successful check is recorded in `.sift/verified-target.json` (schema version, a hash key, the non-secret account ID, index and model, and a timestamp; never tokens or other credentials) and reused by later searches for up to one hour. The key covers the verified publication (fingerprint/namespace, verification time, source index run, backend and model) and the `CLOUDFLARE_VECTORIZE_INDEX`, `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_WORKERS_AI_MODEL` settings, so a new publication or a configuration change re-verifies. `publish` deletes the entry. If Cloudflare rejects a search that used a cached verification (for example, the index was deleted or recreated), search drops the entry, re-verifies, retries once, and adds an info finding; a failed re-verification fails exactly as it would without the cache. Set it to `false` to verify on every search:
+
+```json
+{ "version": 1, "search": { "verifyCache": false } }
+```
+
 ## Onboarding options
 
 | Option | Default | Meaning |

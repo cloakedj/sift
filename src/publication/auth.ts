@@ -46,7 +46,11 @@ export const runWrangler: WranglerCommand = (args) =>
 export class CloudflareAuthService {
   public constructor(private readonly _run: WranglerCommand = runWrangler) {}
 
-  public config() {
+  /**
+   * `trusted.accountId` is a previously verified, non-secret account for this exact
+   * configuration; it skips account discovery. An explicit CLOUDFLARE_ACCOUNT_ID still wins.
+   */
+  public config(trusted?: { accountId?: string }) {
     return Effect.gen(this, function* () {
       const vectorizeIndex = process.env.CLOUDFLARE_VECTORIZE_INDEX;
       if (!vectorizeIndex)
@@ -63,7 +67,7 @@ export class CloudflareAuthService {
           "Publication currently supports only the pinned BGE base model",
         );
       let apiToken = process.env.CLOUDFLARE_API_TOKEN;
-      let accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+      let accountId = process.env.CLOUDFLARE_ACCOUNT_ID || trusted?.accountId;
       if (!apiToken) {
         const auth = yield* this._run(["auth", "token"]);
         if (
